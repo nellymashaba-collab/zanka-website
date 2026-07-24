@@ -1394,15 +1394,6 @@ function generateInvoicePdfBlob(htmlString) {
       return;
     }
 
-    // Off-screen positioning (position:fixed/absolute with a huge
-    // negative left) is unreliable for html2canvas — some browsers
-    // don't paint it the same way, producing a blank capture even
-    // though the DOM content is technically correct. The reliable
-    // fix: render the invoice genuinely ON-SCREEN, at real
-    // coordinates, so the browser paints it normally — then cover it
-    // with an opaque white overlay so the admin never sees it flash.
-    // html2canvas rasterizes whatever's actually painted in the DOM
-    // regardless of what's stacked visually on top of it.
     const MAX_Z = 2147483647;
 
     const overlay = document.createElement('div');
@@ -1416,33 +1407,52 @@ function generateInvoicePdfBlob(htmlString) {
     container.style.top = '0';
     container.style.left = '0';
     container.style.width = '800px';
-    container.style.zIndex = String(MAX_Z - 1); // painted, but sits directly under the overlay
+    container.style.zIndex = String(MAX_Z - 1);
     container.innerHTML = htmlString;
 
     document.body.appendChild(container);
     document.body.appendChild(overlay);
+
+    // TEMPORARY DIAGNOSTICS — tells us exactly where this is failing.
+    // Open the browser Console (F12) before generating an invoice and
+    // read these lines.
+    console.log('[PDF DEBUG] container innerHTML length:', container.innerHTML.length);
+    console.log('[PDF DEBUG] container text content preview:', container.textContent.slice(0, 200));
+    console.log('[PDF DEBUG] container bounding rect:', container.getBoundingClientRect());
+    console.log('[PDF DEBUG] container children count:', container.children.length);
 
     const cleanup = () => {
       if (container.parentNode) container.parentNode.removeChild(container);
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     };
 
-    // Force a layout pass, then give web fonts a moment to actually
-    // load before capturing — the invoice's @import'd Google Fonts
-    // are fetched async and won't be ready on the same tick.
     void container.offsetHeight;
 
     const capture = () => {
+      console.log('[PDF DEBUG] at capture time, bounding rect:', container.getBoundingClientRect());
       html2pdf()
         .set({
           margin: 0,
           filename: 'invoice.pdf',
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: true, // let html2canvas itself print what it's doing
+          },
           jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
         })
-        .from(container)
-        .outputPdf('blob')
+        .toCanvas() // capture as canvas FIRST so we can inspect it before turning it into a PDF
+        .then((canvas) => {
+          console.log('[PDF DEBUG] canvas dimensions:', canvas.width, 'x', canvas.height);
+          console.log('[PDF DEBUG] canvas dataURL preview (first 100 chars):', canvas.toDataURL().slice(0, 100));
+          return html2pdf().set({
+            margin: 0,
+            filename: 'invoice.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+          }).from(canvas).outputPdf('blob');
+        })
         .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
         .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
     };
