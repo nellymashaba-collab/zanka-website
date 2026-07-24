@@ -1389,68 +1389,47 @@ async function retryTransient(fn, retries = 2) {
 // A4 PDF page and cleaned up afterward.
 function generateInvoicePdfBlob(htmlString) {
   return new Promise((resolve, reject) => {
-    // html2pdf.js's chained API (.from().toCanvas().toPdf()...) has
-    // produced three different silent/broken results in testing.
-    // html2canvas and jsPDF are both bundled inside html2pdf.bundle.min.js
-    // and exposed as globals — calling them directly gives full control
-    // and a clear error at each step instead of a black-box chain.
-    const html2canvasFn = window.html2canvas;
-    const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
-
-    if (typeof html2canvasFn !== 'function' || typeof jsPDFCtor !== 'function') {
+    if (typeof html2pdf === 'undefined') {
       reject(new Error('PDF library failed to load — check your internet connection and try again.'));
       return;
     }
 
-    const MAX_Z = 2147483647;
-    const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.inset = '0';
-    overlay.style.background = '#ffffff';
-    overlay.style.zIndex = String(MAX_Z);
-
+    // TEMPORARY: no hiding overlay this time. We've been reasoning
+    // about whether this content renders correctly purely from
+    // bounding-box numbers — we've never actually LOOKED at it. This
+    // version deliberately leaves it visible on screen for a few
+    // seconds before capturing, so we can screenshot what the browser
+    // itself actually paints. That tells us definitively whether this
+    // is a real CSS/rendering problem or specifically an html2canvas
+    // capture problem.
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.top = '0';
     container.style.left = '0';
     container.style.width = '800px';
-    container.style.zIndex = String(MAX_Z - 1);
+    container.style.zIndex = '999999';
+    container.style.border = '5px solid red'; // impossible to miss
     container.innerHTML = htmlString;
-
     document.body.appendChild(container);
-    document.body.appendChild(overlay);
 
-    const cleanup = () => {
-      if (container.parentNode) container.parentNode.removeChild(container);
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    };
+    console.log('[PDF DEBUG] Invoice is now VISIBLE on screen with a red border. Screenshot it in the next 4 seconds.');
 
-    void container.offsetHeight;
+    const cleanup = () => { if (container.parentNode) container.parentNode.removeChild(container); };
 
-    const capture = () => {
-      html2canvasFn(container, { scale: 2, useCORS: true, logging: true })
-        .then((canvas) => {
-          console.log('[PDF DEBUG] canvas dimensions:', canvas.width, 'x', canvas.height);
-          if (!canvas.width || !canvas.height) {
-            throw new Error('html2canvas produced an empty canvas (0 dimensions).');
-          }
-          const imgData = canvas.toDataURL('image/jpeg', 0.98);
-          const pdf = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'portrait' });
-          const pageWidth = pdf.internal.pageSize.getWidth();
-          const pageHeight = (canvas.height * pageWidth) / canvas.width;
-          pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
-          const pdfBlob = pdf.output('blob');
-          cleanup();
-          resolve(pdfBlob);
+    setTimeout(() => {
+      html2pdf()
+        .set({
+          margin: 0,
+          filename: 'invoice.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, logging: true },
+          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
         })
+        .from(container)
+        .outputPdf('blob')
+        .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
         .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
-    };
-
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => setTimeout(capture, 150));
-    } else {
-      setTimeout(capture, 500);
-    }
+    }, 4000);
   });
 }
 
