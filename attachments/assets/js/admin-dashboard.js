@@ -1270,21 +1270,22 @@ async function handleInvoiceGenerateSubmit(e) {
     // creation; it was missing here, which is exactly how an earlier
     // invoice ended up stuck with storage_path = null and nothing else.
     try {
-      // 2. Render the branded invoice HTML with real values.
-      const invoiceHtml = renderTenantInvoiceHtml({
+      // 2. Build the data object the PDF renderer needs.
+      const invoiceData = {
         invoiceNumber: invoice.invoice_number,
         invoiceDate, dueDate: dueDateStr, termsDays,
         tenantName, tenantPhone: tenantProfile?.phone || '',
         propertyAddress,
         netRental, electricity, water, sewerage, refuse, totalDue,
-      });
+      };
 
-      // 3. Render the invoice HTML into a real PDF, then upload the PDF
-      // to Storage. Tenants receive this via email/WhatsApp/download —
-      // a raw .html file is unreliable across devices and apps (some
-      // show source code instead of rendering it), whereas a .pdf opens
-      // identically everywhere with no ambiguity.
-      const invoicePdfBlob = await generateInvoicePdfBlob(invoiceHtml);
+      // 3. Render the invoice directly as a real PDF (jsPDF drawing,
+      // not an HTML screenshot — see generateInvoicePdfBlob for why),
+      // then upload it to Storage. Tenants receive this via
+      // email/WhatsApp/download — a raw .html file is unreliable
+      // across devices and apps, whereas a .pdf opens identically
+      // everywhere with no ambiguity.
+      const invoicePdfBlob = await generateInvoicePdfBlob(null, invoiceData);
       const storagePath = `documents/tenant-invoices/${invoice.id}/${invoice.invoice_number}.pdf`;
       await uploadInvoiceFile(invoicePdfBlob, storagePath, 'application/pdf');
       const { error: pathUpdateError } = await supabaseClient.from('tenant_invoices').update({ storage_path: storagePath }).eq('id', invoice.id);
@@ -1387,50 +1388,261 @@ async function retryTransient(fn, retries = 2) {
 // into an off-screen container (not visible to the admin) so the exact
 // branded layout renders pixel-for-pixel, then converted to a single
 // A4 PDF page and cleaned up afterward.
-function generateInvoicePdfBlob(htmlString) {
+function generateInvoicePdfBlob(htmlString, invoiceData) {
   return new Promise((resolve, reject) => {
-    if (typeof html2pdf === 'undefined') {
+    const jsPDFCtor = window.jspdf?.jsPDF;
+    if (typeof jsPDFCtor !== 'function') {
       reject(new Error('PDF library failed to load — check your internet connection and try again.'));
       return;
     }
-
-    // TEMPORARY: no hiding overlay this time. We've been reasoning
-    // about whether this content renders correctly purely from
-    // bounding-box numbers — we've never actually LOOKED at it. This
-    // version deliberately leaves it visible on screen for a few
-    // seconds before capturing, so we can screenshot what the browser
-    // itself actually paints. That tells us definitively whether this
-    // is a real CSS/rendering problem or specifically an html2canvas
-    // capture problem.
-    const container = document.createElement('div');
-    container.style.position = 'fixed';
-    container.style.top = '0';
-    container.style.left = '0';
-    container.style.width = '800px';
-    container.style.zIndex = '999999';
-    container.style.border = '5px solid red'; // impossible to miss
-    container.innerHTML = htmlString;
-    document.body.appendChild(container);
-
-    console.log('[PDF DEBUG] Invoice is now VISIBLE on screen with a red border. Screenshot it in the next 4 seconds.');
-
-    const cleanup = () => { if (container.parentNode) container.parentNode.removeChild(container); };
-
-    setTimeout(() => {
-      html2pdf()
-        .set({
-          margin: 0,
-          filename: 'invoice.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, logging: true },
-          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-        })
-        .from(container)
-        .outputPdf('blob')
-        .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
-        .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
-    }, 4000);
+    try {
+      const blob = renderTenantInvoicePdf(jsPDFCtor, invoiceData);
+      resolve(blob);
+    } catch (err) {
+      reject(new Error('Failed to render invoice PDF: ' + (err?.message || err)));
+    }
   });
+}
+
+// Draws the invoice directly with jsPDF's own vector primitives —
+// rectangles, lines, text — rather than screenshotting rendered HTML.
+// This replaced an html2canvas-based approach that proved unreliable
+// (DOM cloning into an iframe repeatedly measured the content as
+// zero-height, producing blank pages, across multiple attempts to fix
+// timing/positioning/CSS interactions with the Tailwind CDN script).
+// Direct drawing has no such race conditions, and produces real
+// selectable/searchable text rather than a rasterized image.
+function renderTenantInvoicePdf(jsPDFCtor, d) {
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const fmtMoney = (n) => 'R ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Zanka Group brand colors, matching the on-screen template.
+  const NAVY = [31, 42, 68];
+  const NAVY_DEEP = [20, 28, 48];
+  const GOLD = [200, 155, 60];
+  const GOLD_LIGHT = [228, 199, 122];
+  const OFF_WHITE = [244, 244, 244];
+  const INK = [32, 36, 46];
+  const GRAY = [138, 144, 160];
+  const BORDER = [236, 237, 241];
+  const WHITE = [255, 255, 255];
+
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  const contentW = pageW - margin * 2;
+
+  // ---------- Header ----------
+  doc.setFillColor(...NAVY_DEEP);
+  doc.rect(0, 0, pageW, 92, 'F');
+
+  doc.setFillColor(...GOLD);
+  doc.roundedRect(margin, 26, 40, 40, 6, 6, 'F');
+  doc.setTextColor(...NAVY_DEEP);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(20);
+  doc.text('Z', margin + 20, 26 + 27, { align: 'center' });
+
+  doc.setTextColor(...WHITE);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(16);
+  doc.text('ZANKA GROUP', margin + 52, 42);
+  doc.setTextColor(185, 192, 207);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('P R O P E R T Y   M A N A G E M E N T', margin + 52, 54);
+
+  doc.setTextColor(...WHITE);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(22);
+  doc.text('INVOICE', pageW - margin, 42, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Ref: ' + d.invoiceNumber, pageW - margin, 56, { align: 'right' });
+
+  // Gold accent line
+  doc.setFillColor(...GOLD);
+  doc.rect(0, 92, pageW, 3, 'F');
+
+  let y = 128;
+
+  // ---------- Bill To / Details ----------
+  const colW = contentW / 2 - 10;
+
+  doc.setTextColor(...GOLD);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('BILL TO', margin, y);
+
+  const billCardTop = y + 8;
+  const billCardH = d.tenantPhone ? 66 : 52;
+  doc.setFillColor(...OFF_WHITE);
+  doc.roundedRect(margin, billCardTop, colW, billCardH, 6, 6, 'F');
+  doc.setTextColor(...NAVY);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(12.5);
+  doc.text(d.tenantName, margin + 14, billCardTop + 20);
+  doc.setTextColor(75, 81, 99);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  const addressLines = doc.splitTextToSize(d.propertyAddress.replace(/\n/g, ', '), colW - 28);
+  doc.text(addressLines, margin + 14, billCardTop + 36);
+  if (d.tenantPhone) {
+    doc.text(d.tenantPhone, margin + 14, billCardTop + 36 + addressLines.length * 12);
+  }
+
+  const detailsX = margin + colW + 20;
+  doc.setTextColor(...GOLD);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('DETAILS', pageW - margin, y, { align: 'right' });
+
+  let dy = y + 20;
+  const detailRow = (label, value) => {
+    doc.setTextColor(...GRAY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(label, pageW - margin - 90, dy, { align: 'right' });
+    doc.setTextColor(...NAVY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(value, pageW - margin, dy, { align: 'right' });
+    dy += 16;
+  };
+  detailRow('Invoice Date', fmtDate(d.invoiceDate));
+  detailRow('Due Date', fmtDate(d.dueDate));
+
+  doc.setFillColor(251, 243, 227);
+  doc.roundedRect(pageW - margin - 90, dy - 4, 90, 18, 9, 9, 'F');
+  doc.setTextColor(138, 100, 22);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text(`Due in ${d.termsDays} days`, pageW - margin - 45, dy + 8, { align: 'center' });
+
+  y = billCardTop + billCardH + 34;
+
+  // ---------- Charges table ----------
+  const rows = [
+    ['Rental Billed', d.netRental],
+    ['Electricity Billed in Arrears (Pro Rata)', d.electricity],
+    ['Water Billed in Arrears', d.water],
+    ['Sewage Billed in Arrears', d.sewerage],
+    ['Refuse Billed in Arrears', d.refuse],
+  ];
+
+  const colDesc = margin + 10;
+  const colCharges = margin + contentW * 0.62;
+  const colCredits = margin + contentW * 0.78;
+  const colTotal = pageW - margin - 10;
+  const rowH = 26;
+  const headerH = 26;
+
+  doc.setFillColor(...NAVY);
+  doc.rect(margin, y, contentW, headerH, 'F');
+  doc.setTextColor(...WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('DESCRIPTION', colDesc, y + 16);
+  doc.text('CHARGES', colCharges, y + 16, { align: 'right' });
+  doc.text('CREDITS', colCredits, y + 16, { align: 'right' });
+  doc.text('TOTAL', colTotal, y + 16, { align: 'right' });
+
+  let rowY = y + headerH;
+  rows.forEach((row, i) => {
+    if (i % 2 === 1) {
+      doc.setFillColor(250, 250, 251);
+      doc.rect(margin, rowY, contentW, rowH, 'F');
+    }
+    doc.setTextColor(51, 56, 70);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.text(row[0], colDesc, rowY + 17);
+    doc.text(fmtMoney(row[1]), colCharges, rowY + 17, { align: 'right' });
+    doc.text('–', colCredits, rowY + 17, { align: 'right' });
+    doc.setTextColor(...NAVY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmtMoney(row[1]), colTotal, rowY + 17, { align: 'right' });
+    doc.setDrawColor(...BORDER);
+    doc.line(margin, rowY + rowH, margin + contentW, rowY + rowH);
+    rowY += rowH;
+  });
+
+  y = rowY + 24;
+
+  // ---------- Total Due ----------
+  const totalBoxW = 220;
+  doc.setFillColor(...NAVY);
+  doc.roundedRect(pageW - margin - totalBoxW, y, totalBoxW, 44, 8, 8, 'F');
+  doc.setTextColor(185, 192, 207);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('TOTAL DUE', pageW - margin - 16, y + 17, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(18);
+  doc.text(fmtMoney(d.totalDue), pageW - margin - 16, y + 36, { align: 'right' });
+
+  y += 44 + 30;
+
+  // ---------- Payment details / Contact cards ----------
+  const cardW = contentW / 2 - 10;
+  const cardH = 122;
+
+  const drawCard = (x, title, lines) => {
+    doc.setDrawColor(...BORDER);
+    doc.roundedRect(x, y, cardW, cardH, 6, 6, 'S');
+    doc.setTextColor(...GOLD);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(title, x + 14, y + 20);
+    let ly = y + 38;
+    lines.forEach(([k, v]) => {
+      doc.setTextColor(...GRAY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(k, x + 14, ly);
+      doc.setTextColor(...NAVY);
+      doc.setFont('helvetica', 'bold');
+      doc.text(String(v), x + cardW - 14, ly, { align: 'right' });
+      doc.setDrawColor(...BORDER);
+      doc.line(x + 14, ly + 6, x + cardW - 14, ly + 6);
+      ly += 18;
+    });
+  };
+
+  drawCard(margin, 'PAYMENT DETAILS', [
+    ['Account Name', 'Zanka Group (Pty) Ltd'],
+    ['Bank', 'FNB'],
+    ['Account Number', '63182018565'],
+    ['Branch Code', '250655'],
+    ['Account Type', 'Current Account'],
+  ]);
+  drawCard(margin + cardW + 20, 'QUESTIONS ABOUT THIS INVOICE?', [
+    ['Email', 'admin@zankagroup.co.za'],
+    ['Phone', '074 824 8812'],
+    ['WhatsApp', '+27 67 214 6008'],
+  ]);
+
+  y += cardH + 26;
+
+  // ---------- Footer ----------
+  doc.setDrawColor(...BORDER);
+  doc.line(margin, y, pageW - margin, y);
+  y += 22;
+  doc.setTextColor(...NAVY);
+  doc.setFont('times', 'italic');
+  doc.setFontSize(11);
+  doc.text('Thank you for your business.', pageW / 2, y, { align: 'center' });
+  y += 16;
+  doc.setTextColor(154, 160, 174);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(
+    'Zanka Group (Pty) Ltd · Company Reg: 2025/862423/07 · admin@zankagroup.co.za · Sandton, Johannesburg, South Africa · zankagroup.co.za',
+    pageW / 2, y, { align: 'center' }
+  );
+
+  return doc.output('blob');
 }
 
 function uploadInvoiceFile(blob, path, contentType) {
@@ -1450,156 +1662,6 @@ function uploadInvoiceFile(blob, path, contentType) {
   }));
 }
 
-// Renders the exact Zanka Group branded template, populated with real
-// data. Kept as a single self-contained HTML string (CSS inlined) so
-// the stored file opens correctly on its own from Storage, with no
-// dependency on the live site's stylesheet.
-function renderTenantInvoiceHtml(d) {
-  const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const fmtMoney = (n) => 'R ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const row = (label, amount) => `
-          <tr>
-            <td>${label}</td>
-            <td class="num">${fmtMoney(amount)}</td>
-            <td class="num">&ndash;</td>
-            <td class="num total-col">${fmtMoney(amount)}</td>
-          </tr>`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Invoice ${d.invoiceNumber} — Zanka Group</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
-  :root{ --navy:#1F2A44; --navy-deep:#141C30; --gold:#C89B3C; --gold-light:#E4C77A; --off-white:#F4F4F4; --ink:#20242E; }
-  *{ box-sizing:border-box; }
-  body{ margin:0; font-family:'Inter', ui-sans-serif, system-ui, sans-serif; color:var(--ink); background:#fff; font-size:13px; }
-  .font-display{ font-family:'Playfair Display', Georgia, serif; }
-  .sheet{ max-width:800px; margin:0 auto; padding:0 0 40px 0; }
-  .header{ background:var(--navy-deep); color:#fff; padding:32px 48px; display:flex; align-items:center; justify-content:space-between; }
-  .brand{ display:flex; align-items:center; gap:14px; }
-  .logo-mark{ width:44px; height:44px; border-radius:8px; background:var(--gold); color:var(--navy-deep); font-family:'Playfair Display', Georgia, serif; font-weight:800; font-size:22px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .brand-name{ line-height:1.15; }
-  .brand-name .primary{ font-family:'Playfair Display', Georgia, serif; font-weight:700; font-size:19px; letter-spacing:.02em; }
-  .brand-name .secondary{ font-size:10px; letter-spacing:.28em; color:#B9C0CF; font-weight:600; }
-  .header-invoice-title{ text-align:right; }
-  .header-invoice-title .label{ font-family:'Playfair Display', Georgia, serif; font-weight:700; font-size:26px; color:#fff; letter-spacing:.04em; }
-  .header-invoice-title .ref{ font-size:11px; color:var(--gold-light); margin-top:2px; font-weight:600; }
-  .accent-line{ height:4px; background:linear-gradient(90deg, var(--gold), var(--gold-light)); }
-  .body{ padding:36px 48px 0 48px; }
-  .meta-row{ display:flex; justify-content:space-between; gap:32px; margin-bottom:28px; }
-  .meta-block .eyebrow{ font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); margin:0 0 8px 0; }
-  .bill-to-card{ background:var(--off-white); border-radius:10px; padding:16px 18px; min-width:260px; }
-  .bill-to-card .name{ font-family:'Playfair Display', Georgia, serif; font-weight:700; font-size:15px; color:var(--navy); margin:0 0 4px 0; }
-  .bill-to-card .line{ color:#4B5163; line-height:1.55; }
-  .dates-card{ text-align:right; }
-  .dates-card .date-row{ margin-bottom:6px; }
-  .dates-card .date-label{ color:#8A90A0; font-size:11px; margin-right:8px; }
-  .dates-card .date-value{ font-weight:700; color:var(--navy); }
-  .due-pill{ display:inline-block; margin-top:6px; background:#FBF3E3; color:#8A6416; font-weight:700; font-size:11px; padding:4px 12px; border-radius:999px; }
-  table.charges{ width:100%; border-collapse:collapse; margin-bottom:20px; border-radius:10px; overflow:hidden; box-shadow:0 1px 2px rgba(20,28,48,.05), 0 8px 24px -14px rgba(20,28,48,.18); }
-  table.charges thead th{ background:var(--navy); color:#fff; text-align:left; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; font-weight:700; padding:12px 16px; }
-  table.charges thead th.num{ text-align:right; }
-  table.charges tbody td{ padding:12px 16px; border-bottom:1px solid #ECEDF1; color:#333846; }
-  table.charges tbody tr:last-child td{ border-bottom:none; }
-  table.charges tbody td.num{ text-align:right; font-variant-numeric:tabular-nums; }
-  table.charges tbody td.total-col{ font-weight:700; color:var(--navy); }
-  table.charges tbody tr:nth-child(even){ background:#FAFAFB; }
-  .total-due-row{ display:flex; justify-content:flex-end; margin:8px 0 28px 0; }
-  .total-due-box{ background:var(--navy); border-radius:10px; padding:14px 22px; text-align:right; min-width:220px; }
-  .total-due-box .label{ color:#B9C0CF; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; margin:0 0 4px 0; }
-  .total-due-box .amount{ color:var(--gold-light); font-family:'Playfair Display', Georgia, serif; font-weight:800; font-size:24px; }
-  .payment-section{ display:flex; gap:20px; margin-bottom:28px; }
-  .payment-card{ flex:1; border:1px solid #E4E6EC; border-radius:10px; padding:16px 18px; }
-  .payment-card .eyebrow{ font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); margin:0 0 10px 0; }
-  .payment-card .row{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed #ECEDF1; font-size:12.5px; }
-  .payment-card .row:last-child{ border-bottom:none; }
-  .payment-card .row .k{ color:#8A90A0; }
-  .payment-card .row .v{ color:var(--navy); font-weight:600; }
-  .payment-card .note{ margin-top:10px; font-size:11px; color:#8A90A0; font-style:italic; }
-  .footer{ text-align:center; padding-top:8px; border-top:1px solid #ECEDF1; }
-  .footer .thanks{ font-family:'Playfair Display', Georgia, serif; font-style:italic; color:var(--navy); font-size:14px; margin:18px 0 6px 0; }
-  .footer .fine-print{ font-size:10.5px; color:#9AA0AE; margin:0; }
-  .footer .fine-print a{ color:var(--gold); text-decoration:none; }
-</style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="header">
-      <div class="brand">
-        <div class="logo-mark">Z</div>
-        <div class="brand-name">
-          <div class="primary">ZANKA GROUP</div>
-          <div class="secondary">PROPERTY MANAGEMENT</div>
-        </div>
-      </div>
-      <div class="header-invoice-title">
-        <div class="label">INVOICE</div>
-        <div class="ref">Ref: ${d.invoiceNumber}</div>
-      </div>
-    </div>
-    <div class="accent-line"></div>
-    <div class="body">
-      <div class="meta-row">
-        <div class="meta-block">
-          <p class="eyebrow">Bill To</p>
-          <div class="bill-to-card">
-            <p class="name">${d.tenantName}</p>
-            <p class="line">${d.propertyAddress}</p>
-            ${d.tenantPhone ? `<p class="line">${d.tenantPhone}</p>` : ''}
-          </div>
-        </div>
-        <div class="meta-block dates-card">
-          <p class="eyebrow">Details</p>
-          <div class="date-row"><span class="date-label">Invoice Date</span><span class="date-value">${fmtDate(d.invoiceDate)}</span></div>
-          <div class="date-row"><span class="date-label">Due Date</span><span class="date-value">${fmtDate(d.dueDate)}</span></div>
-          <div class="due-pill">Due in ${d.termsDays} days</div>
-        </div>
-      </div>
-      <table class="charges">
-        <thead><tr><th>Description</th><th class="num">Charges</th><th class="num">Credits</th><th class="num">Total</th></tr></thead>
-        <tbody>
-          ${row('Rental Billed', d.netRental)}
-          ${row('Electricity Billed in Arrears (Pro Rata)', d.electricity)}
-          ${row('Water Billed in Arrears', d.water)}
-          ${row('Sewage Billed in Arrears', d.sewerage)}
-          ${row('Refuse Billed in Arrears', d.refuse)}
-        </tbody>
-      </table>
-      <div class="total-due-row">
-        <div class="total-due-box">
-          <p class="label">Total Due</p>
-          <p class="amount">${fmtMoney(d.totalDue)}</p>
-        </div>
-      </div>
-      <div class="payment-section">
-        <div class="payment-card">
-          <p class="eyebrow">Payment Details</p>
-          <div class="row"><span class="k">Account Name</span><span class="v">Zanka Group (Pty) Ltd</span></div>
-          <div class="row"><span class="k">Bank</span><span class="v">FNB</span></div>
-          <div class="row"><span class="k">Account Number</span><span class="v">63182018565</span></div>
-          <div class="row"><span class="k">Branch Code</span><span class="v">250655</span></div>
-          <div class="row"><span class="k">Account Type</span><span class="v">Current Account</span></div>
-          <p class="note">This is Zanka Group's rental collection account for tenant payments.</p>
-        </div>
-        <div class="payment-card">
-          <p class="eyebrow">Questions About This Invoice?</p>
-          <div class="row"><span class="k">Email</span><span class="v">admin@zankagroup.co.za</span></div>
-          <div class="row"><span class="k">Phone</span><span class="v">074 824 8812</span></div>
-          <div class="row"><span class="k">WhatsApp</span><span class="v">+27 67 214 6008</span></div>
-          <p class="note">Or download past invoices any time from your Tenant Portal.</p>
-        </div>
-      </div>
-      <div class="footer">
-        <p class="thanks">Thank you for your business.</p>
-        <p class="fine-print">Zanka Group (Pty) Ltd &middot; Company Reg: 2025 / 862423 / 07 &middot; <a href="mailto:admin@zankagroup.co.za">admin@zankagroup.co.za</a> &middot; Sandton, Johannesburg, South Africa &middot; zankagroup.co.za</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
 
 /* ================= Assign properties to partners ================= */
 async function populateAssignPropertyForm() {
