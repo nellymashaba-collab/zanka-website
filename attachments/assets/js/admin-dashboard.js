@@ -1390,10 +1390,15 @@ async function retryTransient(fn, retries = 2) {
 function generateInvoicePdfBlob(htmlString) {
   return new Promise((resolve, reject) => {
     const container = document.createElement('div');
-    container.style.position = 'fixed';
+    // 'absolute' (not 'fixed') plus explicit top/left keeps this in
+    // normal document flow, which html2canvas measures reliably.
+    // 'fixed' positioning far off-screen is a known cause of blank
+    // captures, since some browsers don't paint fixed content outside
+    // the viewport the same way as absolutely-positioned content.
+    container.style.position = 'absolute';
     container.style.left = '-99999px';
     container.style.top = '0';
-    container.style.width = '800px'; // matches the invoice template's .sheet max-width
+    container.style.width = '800px';
     container.innerHTML = htmlString;
     document.body.appendChild(container);
 
@@ -1405,18 +1410,35 @@ function generateInvoicePdfBlob(htmlString) {
       return;
     }
 
-    html2pdf()
-      .set({
-        margin: 0,
-        filename: 'invoice.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-      })
-      .from(container)
-      .outputPdf('blob')
-      .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
-      .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
+    // Force a layout pass and give web fonts/CSS a moment to settle
+    // before capturing — capturing on the same tick it's inserted can
+    // catch the container before it has real dimensions, which also
+    // produces a blank page.
+    void container.offsetHeight;
+
+    setTimeout(() => {
+      html2pdf()
+        .set({
+          margin: 0,
+          filename: 'invoice.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            // The other well-known fix for blank html2canvas output:
+            // without these, it captures based on the page's current
+            // scroll position, which misses off-screen content entirely.
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: 800,
+          },
+          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+        })
+        .from(container)
+        .outputPdf('blob')
+        .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
+        .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
+    }, 250);
   });
 }
 
