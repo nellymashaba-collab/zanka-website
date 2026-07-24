@@ -1389,13 +1389,20 @@ async function retryTransient(fn, retries = 2) {
 // A4 PDF page and cleaned up afterward.
 function generateInvoicePdfBlob(htmlString) {
   return new Promise((resolve, reject) => {
-    if (typeof html2pdf === 'undefined') {
+    // html2pdf.js's chained API (.from().toCanvas().toPdf()...) has
+    // produced three different silent/broken results in testing.
+    // html2canvas and jsPDF are both bundled inside html2pdf.bundle.min.js
+    // and exposed as globals — calling them directly gives full control
+    // and a clear error at each step instead of a black-box chain.
+    const html2canvasFn = window.html2canvas;
+    const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
+
+    if (typeof html2canvasFn !== 'function' || typeof jsPDFCtor !== 'function') {
       reject(new Error('PDF library failed to load — check your internet connection and try again.'));
       return;
     }
 
     const MAX_Z = 2147483647;
-
     const overlay = document.createElement('div');
     overlay.style.position = 'fixed';
     overlay.style.inset = '0';
@@ -1413,14 +1420,6 @@ function generateInvoicePdfBlob(htmlString) {
     document.body.appendChild(container);
     document.body.appendChild(overlay);
 
-    // TEMPORARY DIAGNOSTICS — tells us exactly where this is failing.
-    // Open the browser Console (F12) before generating an invoice and
-    // read these lines.
-    console.log('[PDF DEBUG] container innerHTML length:', container.innerHTML.length);
-    console.log('[PDF DEBUG] container text content preview:', container.textContent.slice(0, 200));
-    console.log('[PDF DEBUG] container bounding rect:', container.getBoundingClientRect());
-    console.log('[PDF DEBUG] container children count:', container.children.length);
-
     const cleanup = () => {
       if (container.parentNode) container.parentNode.removeChild(container);
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -1429,32 +1428,21 @@ function generateInvoicePdfBlob(htmlString) {
     void container.offsetHeight;
 
     const capture = () => {
-      console.log('[PDF DEBUG] at capture time, bounding rect:', container.getBoundingClientRect());
-      html2pdf()
-        .set({
-          margin: 0,
-          filename: 'invoice.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            logging: true, // let html2canvas itself print what it's doing
-          },
-          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-        })
-        .from(container)
-        .toCanvas() // capture as canvas FIRST so we can inspect it before turning it into a PDF
+      html2canvasFn(container, { scale: 2, useCORS: true, logging: true })
         .then((canvas) => {
           console.log('[PDF DEBUG] canvas dimensions:', canvas.width, 'x', canvas.height);
-          console.log('[PDF DEBUG] canvas dataURL preview (first 100 chars):', canvas.toDataURL().slice(0, 100));
-          return html2pdf().set({
-            margin: 0,
-            filename: 'invoice.pdf',
-            image: { type: 'jpeg', quality: 0.98 },
-            jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-          }).from(canvas).outputPdf('blob');
+          if (!canvas.width || !canvas.height) {
+            throw new Error('html2canvas produced an empty canvas (0 dimensions).');
+          }
+          const imgData = canvas.toDataURL('image/jpeg', 0.98);
+          const pdf = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = (canvas.height * pageWidth) / canvas.width;
+          pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+          const pdfBlob = pdf.output('blob');
+          cleanup();
+          resolve(pdfBlob);
         })
-        .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
         .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
     };
 
