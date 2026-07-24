@@ -1279,9 +1279,14 @@ async function handleInvoiceGenerateSubmit(e) {
         netRental, electricity, water, sewerage, refuse, totalDue,
       });
 
-      // 3. Upload the rendered invoice to Storage.
-      const storagePath = `documents/tenant-invoices/${invoice.id}/${invoice.invoice_number}.html`;
-      await uploadInvoiceHtml(invoiceHtml, storagePath);
+      // 3. Render the invoice HTML into a real PDF, then upload the PDF
+      // to Storage. Tenants receive this via email/WhatsApp/download —
+      // a raw .html file is unreliable across devices and apps (some
+      // show source code instead of rendering it), whereas a .pdf opens
+      // identically everywhere with no ambiguity.
+      const invoicePdfBlob = await generateInvoicePdfBlob(invoiceHtml);
+      const storagePath = `documents/tenant-invoices/${invoice.id}/${invoice.invoice_number}.pdf`;
+      await uploadInvoiceFile(invoicePdfBlob, storagePath, 'application/pdf');
       const { error: pathUpdateError } = await supabaseClient.from('tenant_invoices').update({ storage_path: storagePath }).eq('id', invoice.id);
       if (pathUpdateError) throw pathUpdateError;
 
@@ -1306,8 +1311,8 @@ async function handleInvoiceGenerateSubmit(e) {
         statement_month: invoiceDate.slice(0, 7) + '-01',
         document_date: invoiceDate,
         due_date: dueDateStr,
-        original_filename: `${invoice.invoice_number}.html`,
-        generated_filename: `${invoice.invoice_number}.html`,
+        original_filename: `${invoice.invoice_number}.pdf`,
+        generated_filename: `${invoice.invoice_number}.pdf`,
         storage_path: storagePath,
         subtotal: totalDue, discount: 0, vat: 0, total_amount: totalDue,
         status: 'Approved',
@@ -1377,17 +1382,54 @@ async function retryTransient(fn, retries = 2) {
   throw lastErr;
 }
 
-function uploadInvoiceHtml(htmlString, path) {
+// Renders a self-contained invoice HTML string into an actual PDF Blob,
+// using html2pdf.js (loaded in admin-dashboard.html). The HTML is drawn
+// into an off-screen container (not visible to the admin) so the exact
+// branded layout renders pixel-for-pixel, then converted to a single
+// A4 PDF page and cleaned up afterward.
+function generateInvoicePdfBlob(htmlString) {
+  return new Promise((resolve, reject) => {
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-99999px';
+    container.style.top = '0';
+    container.style.width = '800px'; // matches the invoice template's .sheet max-width
+    container.innerHTML = htmlString;
+    document.body.appendChild(container);
+
+    const cleanup = () => { if (container.parentNode) container.parentNode.removeChild(container); };
+
+    if (typeof html2pdf === 'undefined') {
+      cleanup();
+      reject(new Error('PDF library failed to load — check your internet connection and try again.'));
+      return;
+    }
+
+    html2pdf()
+      .set({
+        margin: 0,
+        filename: 'invoice.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+      })
+      .from(container)
+      .outputPdf('blob')
+      .then((pdfBlob) => { cleanup(); resolve(pdfBlob); })
+      .catch((err) => { cleanup(); reject(new Error('Failed to render invoice PDF: ' + (err?.message || err))); });
+  });
+}
+
+function uploadInvoiceFile(blob, path, contentType) {
   return retryTransient(() => new Promise(async (resolve, reject) => {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) return reject(new Error('Session expired — log in again.'));
-    const blob = new Blob([htmlString], { type: 'text/html' });
     const url = `${SUPABASE_URL}/storage/v1/object/documents/${path}`;
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
     xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
-    xhr.setRequestHeader('Content-Type', 'text/html');
+    xhr.setRequestHeader('Content-Type', contentType);
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('Invoice upload failed: ' + xhr.status + (xhr.status >= 500 ? ' Gateway error' : '')));
     xhr.onerror = () => reject(new Error('Network error uploading invoice.'));
