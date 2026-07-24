@@ -1442,6 +1442,7 @@ function generateInvoicePdfBlob(htmlString) {
           },
           jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
         })
+        .from(container)
         .toCanvas() // capture as canvas FIRST so we can inspect it before turning it into a PDF
         .then((canvas) => {
           console.log('[PDF DEBUG] canvas dimensions:', canvas.width, 'x', canvas.height);
