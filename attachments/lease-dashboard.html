@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lease Register | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+    <div>
+      <p class="eyebrow mb-1">Lease Management</p>
+      <h1 class="font-display font-bold text-navy text-3xl">Lease Register</h1>
+    </div>
+    <a href="lease-wizard.html" class="btn btn-primary">+ Create Lease</a>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
+    <div class="card p-5">
+      <p class="text-xs text-gray-500 mb-1">Total Active Leases</p>
+      <p id="kpi-active-leases" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-xs text-gray-500 mb-1">Pending Signatures</p>
+      <p id="kpi-pending-signatures" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-xs text-gray-500 mb-1">FICA Approvals Pending</p>
+      <p id="kpi-fica-pending" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-xs text-gray-500 mb-1">Occupancy Rate</p>
+      <p id="kpi-occupancy" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-xs text-gray-500 mb-1">Upcoming Expiries (90 days)</p>
+      <p id="kpi-upcoming-expiries" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+    </div>
+  </div>
+
+  <!-- FICA review panel -->
+  <div class="card p-6 mb-8">
+    <h2 class="font-display font-semibold text-navy text-lg mb-1">FICA Compliance Gatekeeper</h2>
+    <p class="text-sm text-gray-500 mb-4">A lease cannot be sent for signature until its Tenant FICA document is reviewed and approved here.</p>
+    <div id="fica-review-list"></div>
+  </div>
+
+  <!-- Renewals due panel -->
+  <div class="card p-6 mb-8">
+    <h2 class="font-display font-semibold text-navy text-lg mb-1">Renewals Due</h2>
+    <p class="text-sm text-gray-500 mb-4">Active leases within 90 days of their end date, with no renewal decision recorded yet. If nothing is chosen before the end date, the lease automatically becomes month-to-month.</p>
+    <div id="renewals-due-list"></div>
+  </div>
+
+  <!-- Register grid -->
+  <div class="card p-6">
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+      <input type="text" id="register-search" class="field !w-auto flex-1 min-w-[180px]" placeholder="Search property or tenant name">
+      <select id="register-status-filter" class="field !w-auto">
+        <option value="">All statuses</option>
+        <option>Draft</option><option>Pending Approval</option><option>Pending Signature</option>
+        <option>Partially Signed</option><option>Fully Signed</option><option>Active</option>
+        <option>Active_Month_to_Month</option><option>Renewal_Due</option><option>Expired</option><option>Archived</option>
+      </select>
+      <input type="date" id="register-date-from" class="field !w-auto" title="From date">
+      <input type="date" id="register-date-to" class="field !w-auto" title="To date">
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+            <th class="py-2 px-3 font-semibold cursor-pointer" data-sort="property">Property</th>
+            <th class="py-2 px-3 font-semibold cursor-pointer" data-sort="tenant">Tenant</th>
+            <th class="py-2 px-3 font-semibold cursor-pointer" data-sort="status">Status</th>
+            <th class="py-2 px-3 font-semibold cursor-pointer" data-sort="end_date">End Date</th>
+            <th class="py-2 px-3 font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="register-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- Audit trail modal -->
+<div id="audit-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-center justify-center p-5">
+  <div class="card p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-display font-semibold text-navy text-lg">Audit Trail</h3>
+      <button id="audit-modal-close" class="text-gray-400 hover:text-navy">&times;</button>
+    </div>
+    <div id="audit-modal-body"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/lease-manager.js"></script>
+
+</body>
+</html>

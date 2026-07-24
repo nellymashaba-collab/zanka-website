@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard | Zanka Group</title>
+<meta name="description" content="Internal administrative dashboard for Zanka Group staff.">
+<meta name="robots" content="noindex, nofollow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#1F2A44',
+            'navy-deep': '#141C30',
+            gold: '#C89B3C',
+            'gold-light': '#E4C77A',
+            offwhite: '#F4F4F4'
+          },
+          fontFamily: {
+            display: ['Playfair Display', 'Georgia', 'serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+
+</head>
+<body class="bg-offwhite antialiased">
+<a href="#main" class="skip-link">Skip to content</a>
+<main id="main">
+
+<div class="lg:flex">
+  <!-- Sidebar -->
+  <aside class="bg-navy-deep lg:w-64 lg:min-h-screen lg:sticky lg:top-0">
+    <div class="flex items-center justify-between px-5 py-4 lg:block lg:px-5 lg:py-6">
+      <a href="index.html" class="flex items-center gap-2.5">
+        <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+        <span class="leading-none">
+          <span class="block font-display font-bold text-white text-lg tracking-tight">ZANKA</span>
+          <span class="block text-[10px] tracking-[0.25em] text-gray-400 font-semibold">ADMIN</span>
+        </span>
+      </a>
+      <button id="sidebar-toggle" class="lg:hidden text-white" aria-label="Toggle menu">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+      </button>
+    </div>
+    <div class="px-5 pb-4 lg:pb-6 border-b border-white/10 flex items-center gap-3">
+      <div id="avatar-widget"></div>
+      <div>
+        <p class="text-xs text-gray-400">Signed in as</p>
+        <p data-admin-name class="text-white font-semibold text-sm truncate"></p>
+        <p class="text-gold text-xs font-semibold mt-0.5">Administrator</p>
+      </div>
+    </div>
+    <nav id="sidebar-nav" class="hidden lg:block px-3 py-4 space-y-1">
+      <button data-section-link="dashboard" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5Z"/></svg>
+        <span>Dashboard</span>
+      </button>
+      <button data-section-link="portfolio" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="4" height="10"/><rect x="10" y="6" width="4" height="14"/><rect x="17" y="3" width="4" height="17"/></svg>
+        <span>Portfolio</span>
+      </button>
+      <button data-section-link="maintenance" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="m14.5 6.5 3 3L8 19H5v-3L14.5 6.5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 3.5a3.5 3.5 0 0 1 3.5 3.5c0 .53-.11 1.03-.3 1.49l-2-2-2 2-2-2 2-2c.46-.19.97-.3 1.5-.3a3.48 3.48 0 0 1-.7-.69Z"/></svg>
+        <span>Maintenance</span>
+      </button>
+      <button data-section-link="payments" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="9" r="6"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12.5a6 6 0 1 1 0-6"/></svg>
+        <span>Payments</span>
+      </button>
+      <button data-section-link="documents" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6m-6 4h6"/></svg>
+        <span>Documents</span>
+      </button>
+      <a href="lease-dashboard.html" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h6M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/></svg>
+        <span>Leases</span>
+      </a>
+      <a href="inspection-history.html" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        <span>Inspections</span>
+      </a>
+      <button data-section-link="investors" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l8-4 8 4v14M9 9h1m-1 4h1m4-4h1m-1 4h1M9 21v-4h6v4"/></svg>
+        <span>Investors</span>
+      </button>
+      <button data-logout class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left mt-4 border-t border-white/10 pt-4">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7"/></svg>
+        <span>Log Out</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Main content -->
+  <div class="flex-1 min-w-0">
+    <div class="bg-white border-b border-gray-100 px-5 sm:px-8 py-4 flex items-center justify-between lg:hidden">
+      <p class="font-display font-bold text-navy">Admin Portal</p>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section data-section="dashboard" class="p-5 sm:p-8">
+      <p class="eyebrow mb-2">Overview</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Portfolio-wide Dashboard</h1>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
+        <div class="card p-5">
+          <p class="text-xs text-gray-500 mb-1">Total Properties</p>
+          <p id="admin-total-properties" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+        </div>
+        <div class="card p-5">
+          <p class="text-xs text-gray-500 mb-1">Occupancy Rate</p>
+          <p id="admin-occupancy-rate" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+        </div>
+        <div class="card p-5">
+          <p class="text-xs text-gray-500 mb-1">Portfolio Value</p>
+          <p id="admin-portfolio-value" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+        </div>
+        <div class="card p-5">
+          <p class="text-xs text-gray-500 mb-1">Expected Monthly Income</p>
+          <p id="admin-expected-income" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+        </div>
+        <div class="card p-5">
+          <p class="text-xs text-gray-500 mb-1">Active Maintenance</p>
+          <p id="admin-active-maintenance" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+        </div>
+      </div>
+
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-3">Recent Payments</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-2 font-semibold">Date</th>
+                <th class="py-2 px-2 font-semibold">Amount</th>
+                <th class="py-2 px-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody id="admin-payments-tbody-dashboard"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PORTFOLIO -->
+    <section data-section="portfolio" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">All Properties</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Portfolio</h1>
+      <div class="card p-6">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-4 font-semibold">Address</th>
+                <th class="py-2 px-4 font-semibold">Value</th>
+                <th class="py-2 px-4 font-semibold">Rent</th>
+                <th class="py-2 px-4 font-semibold">Status</th>
+                <th class="py-2 px-4 font-semibold">Tenant</th>
+              </tr>
+            </thead>
+            <tbody id="admin-portfolio-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAINTENANCE -->
+    <section data-section="maintenance" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">Every Property</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Maintenance Pipeline</h1>
+      <div class="card p-6">
+        <div id="admin-maintenance-list"></div>
+      </div>
+    </section>
+
+    <!-- PAYMENTS -->
+    <section data-section="payments" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">All Tenants</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Payments</h1>
+      <div class="card p-6">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-2 font-semibold">Date</th>
+                <th class="py-2 px-2 font-semibold">Amount</th>
+                <th class="py-2 px-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody id="admin-payments-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <!-- DOCUMENTS -->
+    <section data-section="documents" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">Document Management</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Documents</h1>
+
+      <div id="admin-notification-banner" class="hidden card p-4 mb-6 bg-gold-light/20 border border-gold flex items-center gap-3">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-gold flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+        <p id="admin-notification-text" class="text-sm font-semibold text-navy"></p>
+      </div>
+
+      <!-- Assign properties to partners — needed before a partner can
+           see anything in their own Generate Invoice panel. -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Assign Properties to Partners</h2>
+        <p class="text-sm text-gray-500 mb-5">Estate agent partners can only generate invoices for properties they're assigned to here.</p>
+        <form id="assign-property-form" class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[180px]">
+            <label class="field-label" for="assign-partner">Partner</label>
+            <select class="field" id="assign-partner" required></select>
+          </div>
+          <div class="flex-1 min-w-[180px]">
+            <label class="field-label" for="assign-property">Property</label>
+            <select class="field" id="assign-property" required></select>
+          </div>
+          <button type="submit" class="btn btn-primary !py-2.5">Assign</button>
+        </form>
+        <p id="assign-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="assign-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <div id="assignments-list" class="mt-5 space-y-2"></div>
+      </div>
+
+      <!-- Auto-generated tenant invoices — 10% package properties only.
+           System renders the branded invoice itself; no manual file
+           upload. Invoice number and due date are computed, not typed. -->
+      <div class="card p-6 mb-8 border-2 border-gold">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Generate Invoice <span class="text-xs font-semibold text-gold ml-1">10% PACKAGE</span></h2>
+        <p class="text-sm text-gray-500 mb-5">Only for properties on the 10% package. The system generates the branded invoice, assigns the invoice number, computes the due date from the lease's payment terms, and publishes to both the owner and tenant.</p>
+        <form id="invoice-generate-form" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="invoice-property">Property</label>
+              <select class="field" id="invoice-property" required></select>
+              <p id="invoice-property-empty-note" class="hidden text-xs text-gray-400 mt-1">No properties are on the 10% package yet — set a property's package_tier to '10%' to use this panel.</p>
+            </div>
+            <div>
+              <label class="field-label" for="invoice-tenant">Tenant</label>
+              <select class="field" id="invoice-tenant" required></select>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-3 gap-4">
+            <div>
+              <label class="field-label" for="invoice-date">Invoice Date</label>
+              <input class="field" type="date" id="invoice-date" required>
+            </div>
+            <div>
+              <label class="field-label">Due Date <span class="text-gray-400 font-normal">(from lease terms)</span></label>
+              <p id="invoice-due-date-display" class="field bg-offwhite text-gray-600">Select a tenant first</p>
+            </div>
+            <div>
+              <label class="field-label">Payment Terms</label>
+              <p id="invoice-terms-display" class="field bg-offwhite text-gray-600">—</p>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div><label class="field-label" for="invoice-net-rental">Rental Billed (R)</label><input class="field invoice-financial-input" type="number" step="0.01" id="invoice-net-rental" value="0"></div>
+            <div><label class="field-label" for="invoice-electricity">Electricity Billed in Arrears (R)</label><input class="field invoice-financial-input" type="number" step="0.01" id="invoice-electricity" value="0"></div>
+            <div><label class="field-label" for="invoice-water">Water Billed in Arrears (R)</label><input class="field invoice-financial-input" type="number" step="0.01" id="invoice-water" value="0"></div>
+            <div><label class="field-label" for="invoice-sewerage">Sewage Billed in Arrears (R)</label><input class="field invoice-financial-input" type="number" step="0.01" id="invoice-sewerage" value="0"></div>
+            <div class="sm:col-span-2"><label class="field-label" for="invoice-refuse">Refuse Billed in Arrears (R)</label><input class="field invoice-financial-input" type="number" step="0.01" id="invoice-refuse" value="0"></div>
+          </div>
+
+          <div class="border-t border-gray-100 pt-4">
+            <div class="flex items-center justify-between pt-1">
+              <span class="font-semibold text-navy">Total Due</span>
+              <span id="invoice-total-due" class="font-display font-bold text-navy text-xl">R0.00</span>
+            </div>
+          </div>
+
+          <p id="invoice-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5"></p>
+          <p id="invoice-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5"></p>
+
+          <button type="submit" id="invoice-submit" class="btn btn-primary w-full">Generate &amp; Send Invoice</button>
+        </form>
+      </div>
+
+      <!-- Rent/Utility Invoice — manual upload, for non-10%-package
+           properties. Admin-only, direct publish, no approval step. -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Upload Rent/Utility Invoice <span class="text-xs font-semibold text-gray-400 ml-1">MANUAL / NON-10% PROPERTIES</span></h2>
+        <p class="text-sm text-gray-500 mb-5">For properties not on the 10% package. Rental invoices are uploaded directly by admin and published immediately to both the owner and tenant — no approval step, unlike partner-submitted documents below.</p>
+        <form id="rental-upload-form" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="rental-property">Property</label>
+              <select class="field" id="rental-property" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="rental-tenant">Tenant</label>
+              <select class="field" id="rental-tenant" required></select>
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="rental-statement-month">Statement Month</label>
+              <input class="field" type="month" id="rental-statement-month" required>
+            </div>
+            <div>
+              <label class="field-label" for="rental-document-date">Document Date</label>
+              <input class="field" type="date" id="rental-document-date" required>
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label">Document File <span class="text-gray-400 font-normal">(max 20MB)</span></label>
+            <div id="rental-dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-gold transition">
+              <p class="text-sm text-gray-500">Drag and drop a file here, or click to browse</p>
+              <input type="file" id="rental-file-input" class="hidden">
+            </div>
+            <p id="rental-file-name" class="text-sm text-navy font-medium mt-2 hidden"></p>
+            <div id="rental-progress-wrap" class="hidden mt-2">
+              <div class="w-full bg-gray-100 rounded-full h-2">
+                <div id="rental-progress-bar" class="bg-gold h-2 rounded-full transition-all" style="width:0%"></div>
+              </div>
+              <p id="rental-progress-label" class="text-xs text-gray-500 mt-1">0%</p>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div><label class="field-label" for="rental-net-rental">Net Rental (R)</label><input class="field rental-financial-input" type="number" step="0.01" id="rental-net-rental" value="0"></div>
+            <div><label class="field-label" for="rental-electricity">Electricity (R)</label><input class="field rental-financial-input" type="number" step="0.01" id="rental-electricity" value="0"></div>
+            <div><label class="field-label" for="rental-water">Water (R)</label><input class="field rental-financial-input" type="number" step="0.01" id="rental-water" value="0"></div>
+            <div><label class="field-label" for="rental-sewerage">Sewerage (R)</label><input class="field rental-financial-input" type="number" step="0.01" id="rental-sewerage" value="0"></div>
+            <div class="sm:col-span-2"><label class="field-label" for="rental-other-charges">Other Charges (R)</label><input class="field rental-financial-input" type="number" step="0.01" id="rental-other-charges" value="0"></div>
+          </div>
+
+          <div class="border-t border-gray-100 pt-4 space-y-3">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-gray-500">Subtotal</span>
+              <span id="rental-subtotal" class="font-semibold text-navy">R0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm gap-4">
+              <label for="rental-discount" class="text-gray-500">Discount (R)</label>
+              <input class="field !w-32 !py-1.5 text-right rental-financial-input" type="number" step="0.01" id="rental-discount" value="0.00">
+            </div>
+            <div class="flex items-center justify-between text-sm gap-4">
+              <label for="rental-vat" class="text-gray-500">VAT (R)</label>
+              <input class="field !w-32 !py-1.5 text-right rental-financial-input" type="number" step="0.01" id="rental-vat" value="0.00">
+            </div>
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+              <span class="font-semibold text-navy">Total Invoice Amount</span>
+              <span id="rental-total" class="font-display font-bold text-navy text-xl">R0.00</span>
+            </div>
+          </div>
+
+          <p id="rental-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5"></p>
+          <p id="rental-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5"></p>
+
+          <button type="submit" id="rental-submit" class="btn btn-primary w-full">Publish to Owner &amp; Tenant</button>
+        </form>
+      </div>
+
+      <!-- Admin direct upload — every other category. Publishes
+           immediately, same as Rent/Utility above, but covers Lease,
+           Inspection Report, Pictures, Bulletin (owner + tenant) and
+           Commission Statement, Maintenance Invoice, Owner Statement
+           (owner only). -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Upload Document (Direct)</h2>
+        <p class="text-sm text-gray-500 mb-5">Admin can publish any document type directly — no approval step. Recipients depend on category: Lease, Inspection Report, Pictures and Bulletin go to owner and tenant; Commission Statement, Maintenance Invoice and Owner Statement go to owner only.</p>
+        <form id="direct-upload-form" class="space-y-4">
+          <div>
+            <label class="field-label" for="direct-category">Document Category</label>
+            <select class="field" id="direct-category" required>
+              <option value="">Select a category</option>
+              <option>Lease</option>
+              <option>Inspection Report</option>
+              <option>Pictures</option>
+              <option>Bulletin</option>
+              <option>Commission Statement</option>
+              <option>Maintenance Invoice</option>
+              <option>Professional Fees Invoice</option>
+              <option>Owner Statement</option>
+            </select>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="direct-property">Property</label>
+              <select class="field" id="direct-property" required></select>
+            </div>
+            <div id="direct-tenant-wrap">
+              <label class="field-label" for="direct-tenant">Tenant <span id="direct-tenant-required-mark" class="text-gray-400 font-normal"></span></label>
+              <select class="field" id="direct-tenant"></select>
+            </div>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="direct-statement-month">Statement Month</label>
+              <input class="field" type="month" id="direct-statement-month" required>
+            </div>
+            <div>
+              <label class="field-label" for="direct-document-date">Document Date</label>
+              <input class="field" type="date" id="direct-document-date" required>
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label">Document File <span class="text-gray-400 font-normal">(max 20MB)</span></label>
+            <div id="direct-dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-gold transition">
+              <p class="text-sm text-gray-500">Drag and drop a file here, or click to browse</p>
+              <input type="file" id="direct-file-input" class="hidden">
+            </div>
+            <p id="direct-file-name" class="text-sm text-navy font-medium mt-2 hidden"></p>
+            <div id="direct-progress-wrap" class="hidden mt-2">
+              <div class="w-full bg-gray-100 rounded-full h-2">
+                <div id="direct-progress-bar" class="bg-gold h-2 rounded-full transition-all" style="width:0%"></div>
+              </div>
+              <p id="direct-progress-label" class="text-xs text-gray-500 mt-1">0%</p>
+            </div>
+          </div>
+
+          <div id="direct-financial-wrap">
+            <label class="field-label" for="direct-amount">Amount (R)</label>
+            <input class="field direct-financial-input" type="number" step="0.01" id="direct-amount" value="0">
+          </div>
+
+          <div id="direct-financial-summary" class="border-t border-gray-100 pt-4 space-y-3">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-gray-500">Subtotal</span>
+              <span id="direct-subtotal" class="font-semibold text-navy">R0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm gap-4">
+              <label for="direct-discount" class="text-gray-500">Discount (R)</label>
+              <input class="field !w-32 !py-1.5 text-right direct-financial-input" type="number" step="0.01" id="direct-discount" value="0.00">
+            </div>
+            <div class="flex items-center justify-between text-sm gap-4">
+              <label for="direct-vat" class="text-gray-500">VAT (R)</label>
+              <input class="field !w-32 !py-1.5 text-right direct-financial-input" type="number" step="0.01" id="direct-vat" value="0.00">
+            </div>
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+              <span class="font-semibold text-navy">Total Invoice Amount</span>
+              <span id="direct-total" class="font-display font-bold text-navy text-xl">R0.00</span>
+            </div>
+          </div>
+
+          <p id="direct-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5"></p>
+          <p id="direct-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5"></p>
+
+          <button type="submit" id="direct-submit" class="btn btn-primary w-full">Publish</button>
+        </form>
+      </div>
+
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Partner Submissions Awaiting Approval</h2>
+        <p class="text-sm text-gray-500 mb-4">Leases, Commission Statements, Maintenance Invoices, Professional Fees Invoices, Owner Statements, Inspection Reports, Pictures and Bulletins uploaded by partners. Approving publishes them to the correct audience for that category.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-3 font-semibold">Partner</th>
+                <th class="py-2 px-3 font-semibold">Category</th>
+                <th class="py-2 px-3 font-semibold">Property</th>
+                <th class="py-2 px-3 font-semibold">Month</th>
+                <th class="py-2 px-3 font-semibold">Total</th>
+                <th class="py-2 px-3 font-semibold">File</th>
+                <th class="py-2 px-3 font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody id="admin-approval-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVESTORS -->
+    <section data-section="investors" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">Investor Management</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Investors</h1>
+      <p class="text-sm text-gray-500 mb-6 max-w-2xl">Investors are juristic entities (e.g. "Zanka Pty Ltd"), not individuals. Create the entity, then link a representative — a person who already has an <code>investor</code>-role account created manually in Supabase (same as admin accounts, no public sign-up exists for this role).</p>
+
+      <div class="grid lg:grid-cols-2 gap-6 mb-8">
+        <!-- Create entity -->
+        <div class="card p-6">
+          <h2 class="font-display font-semibold text-navy text-lg mb-4">Create Investor Entity</h2>
+          <form id="create-entity-form" class="space-y-4">
+            <div>
+              <label class="field-label" for="entity-name">Entity Name</label>
+              <input class="field" type="text" id="entity-name" placeholder="e.g. Zanka Pty Ltd" required>
+            </div>
+            <div>
+              <label class="field-label" for="entity-registration">Registration Number <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input class="field" type="text" id="entity-registration">
+            </div>
+            <div>
+              <label class="field-label" for="entity-type">Entity Type</label>
+              <select class="field" id="entity-type">
+                <option>Pty Ltd</option>
+                <option>Trust</option>
+                <option>CC</option>
+                <option>Sole Proprietor</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-full">Create Entity</button>
+          </form>
+          <p id="entity-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+          <p id="entity-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        </div>
+
+        <!-- Link representative -->
+        <div class="card p-6">
+          <h2 class="font-display font-semibold text-navy text-lg mb-4">Link Representative</h2>
+          <form id="link-rep-form" class="space-y-4">
+            <div>
+              <label class="field-label" for="rep-entity">Entity</label>
+              <select class="field" id="rep-entity" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="rep-profile">Representative</label>
+              <select class="field" id="rep-profile" required></select>
+              <p id="rep-profile-empty-note" class="hidden text-xs text-gray-400 mt-1">No investor-role accounts found yet — create one in Supabase Dashboard first (Authentication → Add User, then set role='investor' on their profiles row).</p>
+            </div>
+            <div>
+              <label class="field-label" for="rep-title">Title</label>
+              <input class="field" type="text" id="rep-title" placeholder="e.g. Managing Director" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-full">Link Representative</button>
+          </form>
+          <p id="rep-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+          <p id="rep-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        </div>
+      </div>
+
+      <!-- Create a new property, no SQL needed. The id is a database
+           identity column — assigned automatically the moment this
+           form submits, never entered by hand. -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Create Property</h2>
+        <p class="text-sm text-gray-500 mb-4">The property ID is generated automatically — you never need to know or enter it.</p>
+        <form id="create-property-form" class="space-y-4">
+          <div>
+            <label class="field-label" for="new-property-name">Property Name</label>
+            <input class="field" type="text" id="new-property-name" placeholder="e.g. Unit 47, Roberts Avenue Mansion" required>
+          </div>
+          <div>
+            <label class="field-label" for="new-property-address">Address</label>
+            <textarea class="field" id="new-property-address" rows="2" required></textarea>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="new-property-owner">Owner</label>
+              <select class="field" id="new-property-owner" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="new-property-units">Units Count</label>
+              <input class="field" type="number" step="1" id="new-property-units" value="1">
+            </div>
+            <div>
+              <label class="field-label" for="new-property-rent">Monthly Rent (R)</label>
+              <input class="field" type="number" step="0.01" id="new-property-rent" value="0">
+            </div>
+            <div>
+              <label class="field-label" for="new-property-cost">Purchase Price (R)</label>
+              <input class="field" type="number" step="0.01" id="new-property-cost" value="0">
+            </div>
+            <div>
+              <label class="field-label" for="new-property-package">Package Tier</label>
+              <select class="field" id="new-property-package">
+                <option value="8%">8%</option>
+                <option value="10%">10%</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="new-property-occupancy">Occupancy Status</label>
+              <select class="field" id="new-property-occupancy">
+                <option>Vacant</option>
+                <option>Occupied</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-full">Create Property</button>
+        </form>
+        <p id="create-property-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="create-property-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+
+      <!-- Create the PROFILE for any role, once the auth login itself
+           has been created in Supabase Dashboard. That one step can't
+           be moved into this app — creating a real login requires
+           privileges that must never be exposed in browser code, the
+           same reasoning behind never putting a service-role key in
+           client-side JS anywhere in this build. Everything AFTER
+           that step is handled here instead of hand-written SQL. -->
+      <div class="card p-6 mb-8 border-2 border-gold">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Create Account Profile</h2>
+        <p class="text-sm text-gray-500 mb-2">Works for Owners, Tenants, Partners, and Investors — pick the role below.</p>
+        <p class="text-xs text-gray-500 mb-4 bg-offwhite rounded-lg px-3 py-2">
+          <strong>First</strong>, create the actual login in Supabase Dashboard → Authentication → Add User (this step can't be done from here). Copy the User UID it shows you, then fill in the rest below — no SQL needed for this part.
+        </p>
+        <form id="create-profile-form" class="space-y-4">
+          <div>
+            <label class="field-label" for="new-profile-uid">User UID <span class="text-gray-400 font-normal">(from Supabase Dashboard)</span></label>
+            <input class="field" type="text" id="new-profile-uid" placeholder="e.g. 74a2203e-c3ce-4d1f-a2dd-b69fc918f13c" required>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="new-profile-name">Full Name</label>
+              <input class="field" type="text" id="new-profile-name" required>
+            </div>
+            <div>
+              <label class="field-label" for="new-profile-email">Email</label>
+              <input class="field" type="email" id="new-profile-email" required>
+            </div>
+            <div>
+              <label class="field-label" for="new-profile-role">Role</label>
+              <select class="field" id="new-profile-role" required>
+                <option value="">Select a role</option>
+                <option value="owner">Owner</option>
+                <option value="tenant">Tenant</option>
+                <option value="partner">Partner</option>
+                <option value="investor">Investor</option>
+              </select>
+            </div>
+            <div id="new-profile-partner-type-wrap" class="hidden">
+              <label class="field-label" for="new-profile-partner-type">Partner Type</label>
+              <select class="field" id="new-profile-partner-type">
+                <option>Estate Agent</option>
+                <option>Contractor</option>
+                <option>Plumber</option>
+                <option>Electrician</option>
+                <option>Painter</option>
+                <option>Architect</option>
+                <option>Engineer</option>
+                <option>Conveyancer</option>
+                <option>Attorney</option>
+                <option>Inspector</option>
+                <option>Valuer</option>
+                <option>Accountant</option>
+                <option>Security Company</option>
+                <option>Insurance Assessor</option>
+                <option>Cleaning Company</option>
+                <option>Photographer</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-full">Create Profile</button>
+        </form>
+        <p id="create-profile-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="create-profile-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+
+      <!-- Quick tenant-property link — creates a lease directly, no
+           FICA gate, no e-signature. A tenant-property connection in
+           this system IS a lease record; there's no lighter-weight
+           link. Use the full Lease Wizard instead when you actually
+           need FICA verification and formal e-signing. -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Link Tenant to Property</h2>
+        <p class="text-sm text-gray-500 mb-4">Quick administrative link — creates the lease as Active immediately, skipping FICA and e-signature. Use the <a href="lease-wizard.html" class="text-gold hover:underline">full Lease Wizard</a> instead when you need the formal process.</p>
+        <form id="quick-link-form" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="quick-link-property">Property</label>
+              <select class="field" id="quick-link-property" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="quick-link-tenant">Tenant</label>
+              <select class="field" id="quick-link-tenant" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="quick-link-start">Start Date</label>
+              <input class="field" type="date" id="quick-link-start" required>
+            </div>
+            <div>
+              <label class="field-label" for="quick-link-end">End Date</label>
+              <input class="field" type="date" id="quick-link-end" required>
+            </div>
+            <div>
+              <label class="field-label" for="quick-link-rent">Monthly Rent (R) <span class="text-gray-400 font-normal">(auto-fills from property)</span></label>
+              <input class="field" type="number" step="0.01" id="quick-link-rent">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-full">Link Tenant to Property</button>
+        </form>
+        <p id="quick-link-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="quick-link-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+
+      <!-- Assign properties + valuation fields -->
+      <div class="card p-6 mb-8">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Assign Property to Entity</h2>
+        <p class="text-sm text-gray-500 mb-4">Sets which properties belong to which investor entity, plus the valuation and loan fields needed for Equity, Capital Appreciation and Yield to show real figures on their dashboard.</p>
+        <form id="assign-entity-property-form" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="entity-property-entity">Entity</label>
+              <select class="field" id="entity-property-entity" required></select>
+            </div>
+            <div>
+              <label class="field-label" for="entity-property-select">Property</label>
+              <select class="field" id="entity-property-select" required></select>
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label" for="entity-property-type">Property Type</label>
+              <select class="field" id="entity-property-type">
+                <option>Residential</option>
+                <option>Commercial</option>
+                <option>Industrial</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="entity-market-value">Current Market Value (R) <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input class="field" type="number" step="0.01" id="entity-market-value">
+            </div>
+          </div>
+
+          <div class="border-t border-gray-100 pt-4">
+            <h3 class="font-semibold text-navy text-sm mb-1">Loan / Bond Details <span class="text-gray-400 font-normal">(optional)</span></h3>
+            <p class="text-xs text-gray-500 mb-3">If filled in, the outstanding balance is calculated automatically each time the dashboard loads — standard amortization, assuming consistent monthly payments — rather than needing to be updated by hand every month.</p>
+            <div class="grid sm:grid-cols-4 gap-4">
+              <div>
+                <label class="field-label" for="entity-loan-amount">Loan Amount (R)</label>
+                <input class="field loan-calc-input" type="number" step="0.01" id="entity-loan-amount">
+              </div>
+              <div>
+                <label class="field-label" for="entity-interest-rate">Interest Rate (%)</label>
+                <input class="field loan-calc-input" type="number" step="0.01" id="entity-interest-rate" placeholder="e.g. 10.65">
+              </div>
+              <div>
+                <label class="field-label" for="entity-loan-term">Term (months)</label>
+                <input class="field loan-calc-input" type="number" step="1" id="entity-loan-term" placeholder="e.g. 240">
+              </div>
+              <div>
+                <label class="field-label" for="entity-loan-start">Loan Start Date</label>
+                <input class="field loan-calc-input" type="date" id="entity-loan-start">
+              </div>
+            </div>
+            <div class="flex items-center justify-between mt-3 bg-offwhite rounded-lg px-4 py-3">
+              <span class="text-sm text-gray-600">Estimated Outstanding Balance (today)</span>
+              <span id="entity-outstanding-preview" class="font-display font-bold text-navy text-lg">—</span>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-full">Assign &amp; Save</button>
+        </form>
+        <p id="entity-property-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="entity-property-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+
+      <!-- Overview -->
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-4">All Entities</h2>
+        <div id="entities-overview-list"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Reject modal -->
+<div id="reject-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-center justify-center p-5">
+  <div class="card p-6 max-w-md w-full">
+    <h3 class="font-display font-semibold text-navy text-lg mb-3">Reject Document</h3>
+    <label class="field-label" for="reject-notes">Rejection Feedback Notes <span class="text-red-500">*</span></label>
+    <textarea class="field" id="reject-notes" rows="3" required placeholder="Explain what needs to be corrected"></textarea>
+    <div class="flex gap-3 mt-5">
+      <button type="button" id="reject-cancel" class="btn btn-outline-navy flex-1">Cancel</button>
+      <button type="button" id="reject-confirm" class="btn btn-primary flex-1 !bg-red-600 hover:!bg-red-700">Confirm Rejection</button>
+    </div>
+  </div>
+</div>
+
+</main>
+<script src="assets/js/main.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/avatar-upload.js"></script>
+<script src="assets/js/admin-dashboard.js"></script>
+
+</body>
+</html>

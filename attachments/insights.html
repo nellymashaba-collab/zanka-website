@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Insights | Zanka Group</title>
+<meta name="description" content="Zanka Group Insights: property investing, market trends, tax considerations and rental management articles for South African landlords.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#1F2A44',
+            'navy-deep': '#141C30',
+            gold: '#C89B3C',
+            'gold-light': '#E4C77A',
+            offwhite: '#F4F4F4'
+          },
+          fontFamily: {
+            display: ['Playfair Display', 'Georgia', 'serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+
+</head>
+<body class="bg-white antialiased">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between">
+    <a href="index.html" class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+      <span class="leading-none">
+        <span class="block font-display font-bold text-navy text-lg tracking-tight">ZANKA</span>
+        <span class="block text-[10px] tracking-[0.25em] text-gray-500 font-semibold">GROUP</span>
+      </span>
+    </a>
+    <nav class="hidden lg:flex items-center gap-8">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        <a href="services.html" class="nav-link">Services</a>
+        <a href="pricing.html" class="nav-link">Pricing</a>
+        <a href="resources.html" class="nav-link">Resources</a>
+        <a href="contact.html" class="nav-link">Contact</a>
+    </nav>
+    <div class="hidden lg:flex items-center gap-3">
+      <a href="tenant-login.html" class="btn-outline-navy btn !py-2.5 !px-5 text-sm">Tenant Portal</a>
+      <a href="owner-login.html" class="btn-primary btn !py-2.5 !px-5 text-sm">Owner Portal</a>
+    </div>
+    <button id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" class="lg:hidden text-navy">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+  </div>
+  <div id="mobile-menu" class="hidden lg:hidden border-t border-gray-100 px-5 py-4 space-y-1">
+        <a href="index.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Home</a>
+        <a href="about.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">About</a>
+        <a href="services.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Services</a>
+        <a href="pricing.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Pricing</a>
+        <a href="resources.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Resources</a>
+        <a href="contact.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Contact</a>
+    <div class="flex gap-3 pt-3">
+      <a href="tenant-login.html" class="btn-outline-navy btn flex-1 text-sm">Tenant Portal</a>
+      <a href="owner-login.html" class="btn-primary btn flex-1 text-sm">Owner Portal</a>
+    </div>
+  </div>
+</header>
+<main id="main">
+
+<section class="bg-white pt-16 pb-10 md:pt-24 md:pb-12">
+  <div class="max-w-3xl mx-auto px-5 sm:px-8 text-center">
+    <h1 class="font-display font-bold text-navy text-4xl sm:text-5xl mb-4">Insights</h1>
+    <p class="text-gray-500 text-lg mb-9">Property investing, market trends, tax considerations and rental management.</p>
+    <div class="flex flex-wrap justify-center gap-3"><button data-filter-tab="All" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-navy text-white">All</button><button data-filter-tab="Investing" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-white text-navy">Investing</button><button data-filter-tab="Management" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-white text-navy">Management</button><button data-filter-tab="Tips & Guides" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-white text-navy">Tips & Guides</button><button data-filter-tab="Market Insights" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-white text-navy">Market Insights</button><button data-filter-tab="Tax & Legal" class="px-5 py-2 rounded-full text-sm font-semibold border border-gray-200 transition bg-white text-navy">Tax & Legal</button></div>
+  </div>
+</section>
+
+<section class="bg-white pb-16 md:pb-20">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    
+      <div data-category="Market Insights" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1449844908441-8829872d2607?q=80&w=800&auto=format&fit=crop" alt="South African Property Market: What to Watch This Year" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Market Insights</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">South African Property Market: What to Watch This Year</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">Trends shaping rental demand and pricing.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+      <div data-category="Tax & Legal" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?q=80&w=800&auto=format&fit=crop" alt="Tax Considerations for South African Landlords" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Tax & Legal</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">Tax Considerations for South African Landlords</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">What you can and can&rsquo;t deduct from rental income.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+      <div data-category="Investing" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=800&auto=format&fit=crop" alt="Buy-to-Let vs. Buy-to-Flip: Which Strategy Fits You?" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Investing</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">Buy-to-Let vs. Buy-to-Flip: Which Strategy Fits You?</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">Comparing two common property investment approaches.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+      <div data-category="Management" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?q=80&w=800&auto=format&fit=crop" alt="Setting the Right Rental Price From Day One" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Management</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">Setting the Right Rental Price From Day One</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">How to price a unit to minimise vacancy.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+      <div data-category="Tips & Guides" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1600585154526-990dced4db0d?q=80&w=800&auto=format&fit=crop" alt="What to Do Before Your Tenant Moves Out" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Tips & Guides</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">What to Do Before Your Tenant Moves Out</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">A practical end-of-lease checklist for landlords.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+      <div data-category="Investing" class="card overflow-hidden flex flex-col">
+        <img src="https://images.unsplash.com/photo-1560184897-ae75f418493e?q=80&w=800&auto=format&fit=crop" alt="Building a Multi-Property Portfolio the Smart Way" class="w-full h-44 object-cover">
+        <div class="p-6 flex flex-col flex-1">
+          <span class="eyebrow mb-2">Investing</span>
+          <h3 class="font-display font-semibold text-navy text-lg mb-2 leading-snug">Building a Multi-Property Portfolio the Smart Way</h3>
+          <p class="text-gray-600 text-sm leading-relaxed mb-4 flex-1">Sequencing purchases to manage risk and cash flow.</p>
+          <a href="contact.html" class="learn-more">Read More &rarr;</a>
+        </div>
+      </div>
+  </div>
+</section>
+
+<section class="bg-offwhite py-16">
+  <div class="max-w-3xl mx-auto px-5 sm:px-8 text-center card p-10">
+    <h2 class="font-display font-bold text-navy text-2xl mb-3">Never miss an update</h2>
+    <p class="text-gray-500 mb-6">Subscribe for new articles on property investing and management, straight to your inbox.</p>
+    <form data-static-form class="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+      <input type="email" required placeholder="you@email.com" class="field flex-1">
+      <button type="submit" class="btn btn-primary whitespace-nowrap">Subscribe</button>
+    </form>
+    <p data-form-note class="hidden text-sm text-green-700 mt-4">You&rsquo;re subscribed &mdash; thanks for joining!</p>
+  </div>
+</section>
+
+<section class="bg-navy py-16">
+  <div class="max-w-4xl mx-auto px-5 sm:px-8 text-center">
+    <h2 class="font-display font-bold text-white text-3xl mb-4">Want tailored advice for your property?</h2>
+    <a href="contact.html" class="btn btn-primary">Book a Consultation</a>
+  </div>
+</section>
+
+</main>
+<footer class="bg-navy-deep text-gray-300">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-16 grid grid-cols-2 md:grid-cols-5 gap-10">
+    <div class="col-span-2">
+      <a href="index.html" class="flex items-center gap-2.5 mb-4">
+        <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+        <span class="leading-none">
+          <span class="block font-display font-bold text-white text-lg">ZANKA GROUP</span>
+        </span>
+      </a>
+      <p class="text-sm text-gray-400 max-w-xs">Build Wealth Through Property. We&rsquo;ll Manage the Rest.</p>
+      <div class="flex gap-3 mt-5">
+        <a href="tenant-login.html" class="text-xs font-semibold px-4 py-2 rounded-full border border-gray-600 hover:border-gold hover:text-gold transition">Tenant Portal</a>
+        <a href="owner-login.html" class="text-xs font-semibold px-4 py-2 rounded-full border border-gray-600 hover:border-gold hover:text-gold transition">Owner Portal</a>
+      </div>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Company</h4>
+      <ul class="space-y-2.5 text-sm">
+        <li><a href="about.html" class="hover:text-gold transition">About Us</a></li>
+        <li><a href="services.html" class="hover:text-gold transition">Services</a></li>
+        <li><a href="pricing.html" class="hover:text-gold transition">Pricing</a></li>
+        <li><a href="resources.html" class="hover:text-gold transition">Resources</a></li>
+        <li><a href="contact.html" class="hover:text-gold transition">Contact</a></li>
+        <li><a href="for-landlords.html" class="hover:text-gold transition">For Landlords</a></li>
+        <li><a href="for-investors.html" class="hover:text-gold transition">For Investors</a></li>
+        <li><a href="insights.html" class="hover:text-gold transition">Insights</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Services</h4>
+      <ul class="space-y-2.5 text-sm">
+        <li><a href="services.html#property-management" class="hover:text-gold transition">Property Management</a></li>
+        <li><a href="services.html#tenant-placement" class="hover:text-gold transition">Tenant Placement</a></li>
+        <li><a href="services.html#investment-advisory" class="hover:text-gold transition">Investment Advisory</a></li>
+        <li><a href="services.html#maintenance-management" class="hover:text-gold transition">Maintenance Management</a></li>
+        <li><a href="services.html#lease-administration" class="hover:text-gold transition">Lease Administration</a></li>
+        <li><a href="services.html#inspections" class="hover:text-gold transition">Inspection Services</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Contact</h4>
+      <ul class="space-y-2.5 text-sm text-gray-400">
+        <li>010 123 4567</li>
+        <li>info@zankagroup.co.za</li>
+        <li>Sandton, Johannesburg,<br>South Africa</li>
+        <li><a href="https://wa.me/27101234567" class="hover:text-gold transition">Chat on WhatsApp</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+      <p>&copy; <span data-year></span> Zanka Group (Pty) Ltd. All rights reserved.</p>
+      <div class="flex gap-5">
+        <a href="privacy.html" class="hover:text-gold transition">Privacy Policy</a>
+        <a href="terms.html" class="hover:text-gold transition">Terms of Service</a>
+        <a href="popia.html" class="hover:text-gold transition">POPIA Notice</a>
+      </div>
+    </div>
+  </div>
+</footer>
+<script src="assets/js/main.js"></script>
+
+</body>
+</html>

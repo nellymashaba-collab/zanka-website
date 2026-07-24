@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Your Lease | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-md mx-auto px-5 sm:px-8 py-16 min-h-screen flex items-center">
+  <div class="w-full">
+    <div class="text-center mb-8">
+      <p class="eyebrow mb-2">Electronic Signature</p>
+      <h1 class="font-display font-bold text-navy text-3xl">Sign Your Lease</h1>
+    </div>
+
+    <div class="card p-8">
+      <div id="sign-loading" class="text-center py-4">
+        <p class="text-sm text-gray-500">Loading your signature request&hellip;</p>
+      </div>
+
+      <div id="sign-unavailable" class="hidden text-center py-4">
+        <p class="text-sm text-gray-600" id="sign-unavailable-text"></p>
+      </div>
+
+      <div id="sign-otp-wrap" class="hidden">
+        <p class="text-sm text-gray-500 mb-4">Enter the 6-digit code sent to your email.</p>
+        <label class="field-label" for="sign-otp-input">Verification Code</label>
+        <input class="field text-center text-2xl tracking-widest" type="text" id="sign-otp-input" maxlength="6" inputmode="numeric">
+        <p id="sign-otp-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-4"></p>
+        <button id="sign-otp-verify" class="btn btn-primary w-full mt-5">Verify Code</button>
+      </div>
+
+      <div id="sign-form-wrap" class="hidden">
+        <div id="sign-document-preview" class="border border-gray-200 rounded-xl p-4 max-h-64 overflow-y-auto bg-white text-xs leading-relaxed mb-5"></div>
+        <label class="field-label" for="sign-typed-name">Type your full legal name to sign</label>
+        <input class="field" type="text" id="sign-typed-name" placeholder="Your full name">
+        <label class="flex items-start gap-2 mt-4 text-sm text-gray-600">
+          <input type="checkbox" id="sign-consent" class="mt-1">
+          <span>I confirm that typing my name above constitutes my electronic signature, and that I have read and agree to the terms of this lease.</span>
+        </label>
+        <p id="sign-form-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-4"></p>
+        <button id="sign-submit" class="btn btn-primary w-full mt-5">Sign Lease</button>
+      </div>
+
+      <div id="sign-complete" class="hidden text-center py-4">
+        <div class="icon-badge mx-auto mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <p class="font-semibold text-navy mb-1">Signed successfully</p>
+        <p class="text-sm text-gray-500" id="sign-complete-text"></p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/lease-sign.js"></script>
+
+</body>
+</html>

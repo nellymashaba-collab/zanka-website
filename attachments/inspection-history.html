@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inspection History | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  #sign-canvas { touch-action: none; border: 2px dashed #D1D5DB; border-radius: 0.75rem; background: #FAFAFA; width: 100%; height: 180px; }
+</style>
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-5xl mx-auto px-5 sm:px-8 py-8">
+
+  <!-- LIST VIEW -->
+  <div id="list-view">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <p class="eyebrow mb-1">Inspection Module</p>
+        <h1 class="font-display font-bold text-navy text-3xl">Inspection History</h1>
+      </div>
+      <a id="new-inspection-link" href="inspection.html" class="btn btn-primary hidden">+ New Inspection</a>
+    </div>
+    <div class="card p-6">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+              <th class="py-2 px-3 font-semibold">Property</th>
+              <th class="py-2 px-3 font-semibold">Type</th>
+              <th class="py-2 px-3 font-semibold">Date</th>
+              <th class="py-2 px-3 font-semibold">Condition</th>
+              <th class="py-2 px-3 font-semibold">Signatures</th>
+              <th class="py-2 px-3 font-semibold"></th>
+            </tr>
+          </thead>
+          <tbody id="inspections-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAIL VIEW -->
+  <div id="detail-view" class="hidden">
+    <div class="flex items-center gap-4 mb-6">
+      <button id="back-to-list" class="learn-more text-sm">&larr; Back to History</button>
+      <a id="back-to-dashboard" href="#" class="learn-more text-sm">&larr; Back to Dashboard</a>
+      <button id="download-report-btn" class="btn btn-outline-navy !py-2 text-sm ml-auto">Download Report</button>
+    </div>
+
+    <div class="card p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p id="detail-type" class="eyebrow mb-1"></p>
+          <h1 id="detail-address" class="font-display font-bold text-navy text-2xl"></h1>
+        </div>
+        <span id="detail-status" class="text-xs font-semibold px-3 py-1 rounded-full"></span>
+      </div>
+      <div class="grid sm:grid-cols-3 gap-4 text-sm">
+        <div><p class="text-gray-500 text-xs">Date</p><p id="detail-date" class="font-semibold text-navy"></p></div>
+        <div><p class="text-gray-500 text-xs">Overall Condition</p><p id="detail-condition" class="font-semibold text-navy"></p></div>
+        <div><p class="text-gray-500 text-xs">Recommended Action</p><p id="detail-action" class="font-semibold text-navy"></p></div>
+      </div>
+      <p id="detail-comments" class="text-sm text-gray-600 mt-4"></p>
+    </div>
+
+    <!-- Rooms + photos -->
+    <div id="detail-rooms" class="space-y-4 mb-6"></div>
+
+    <!-- Signature status for all three parties -->
+    <div class="card p-6 mb-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-4">Signatures</h2>
+      <div id="signature-status-list" class="space-y-3 mb-5"></div>
+
+      <p id="sign-waiting-message" class="hidden text-sm text-gray-500 border-t border-gray-100 pt-5">
+        You still need to sign this inspection, but Zanka Group hasn't sent your verification code yet. Check back shortly, or contact us if this has been a while.
+      </p>
+
+      <!-- Admin/partner: request an OTP-verified signature from tenant/owner -->
+      <div id="request-signatures-panel" class="hidden border-t border-gray-100 pt-5">
+        <h3 class="font-semibold text-navy text-sm mb-3">Request Signatures</h3>
+        <p class="text-xs text-gray-500 mb-3">Sends a one-time verification code by email — the tenant/owner enters it here before they can sign.</p>
+        <div class="flex gap-3">
+          <button type="button" id="request-tenant-signature" class="btn btn-outline-navy !py-2 text-sm">Request Tenant Signature</button>
+          <button type="button" id="request-owner-signature" class="btn btn-outline-navy !py-2 text-sm">Request Owner Signature</button>
+        </div>
+        <p id="request-signatures-note" class="hidden text-sm mt-3"></p>
+      </div>
+
+      <!-- Step 1: OTP entry, shown to the tenant/owner once an OTP has been requested for them -->
+      <div id="sign-otp-panel" class="hidden border-t border-gray-100 pt-5">
+        <h3 class="font-semibold text-navy text-sm mb-3">Enter Your Verification Code</h3>
+        <p class="text-xs text-gray-500 mb-3">Sent to your email when the signature request was issued.</p>
+        <input class="field !w-40 text-center text-xl tracking-widest" type="text" id="sign-otp-input" maxlength="6" inputmode="numeric">
+        <p id="sign-otp-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <button type="button" id="sign-otp-verify" class="btn btn-primary mt-3">Verify Code</button>
+      </div>
+
+      <!-- Step 2: actual signature capture, only shown after OTP verified -->
+      <div id="sign-here-panel" class="hidden border-t border-gray-100 pt-5">
+        <h3 class="font-semibold text-navy text-sm mb-3">Add Your Signature</h3>
+        <canvas id="sign-canvas"></canvas>
+        <div class="flex gap-3 mt-3">
+          <button type="button" id="sign-clear" class="btn btn-outline-navy !py-2 text-sm">Clear</button>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-4 mt-4">
+          <div>
+            <label class="field-label" for="sign-full-name">Full Name</label>
+            <input class="field" type="text" id="sign-full-name">
+          </div>
+        </div>
+        <label class="flex items-start gap-2 mt-4 text-sm text-gray-600">
+          <input type="checkbox" id="sign-consent" class="mt-1">
+          <span>I confirm this signature and that I have reviewed the inspection above.</span>
+        </label>
+        <p id="sign-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-4"></p>
+        <button type="button" id="sign-submit" class="btn btn-primary w-full mt-4">Sign Inspection</button>
+      </div>
+    </div>
+  </div>
+
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/inspection-history.js"></script>
+
+</body>
+</html>

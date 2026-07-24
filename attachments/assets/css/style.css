@@ -1,0 +1,279 @@
+/* Zanka Group — shared styles */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+:root{
+  --navy:#1F2A44;
+  --navy-deep:#141C30;
+  --gold:#C89B3C;
+  --gold-light:#E4C77A;
+  --off-white:#F4F4F4;
+  --ink:#20242E;
+}
+
+html{scroll-behavior:smooth;}
+
+body{
+  font-family:'Inter',ui-sans-serif,system-ui,sans-serif;
+  color:var(--ink);
+}
+
+h1,h2,h3,.font-display{
+  font-family:'Playfair Display', Georgia, serif;
+}
+
+.text-navy{color:var(--navy);}
+.bg-navy{background-color:var(--navy);}
+.bg-navy-deep{background-color:var(--navy-deep);}
+.text-gold{color:var(--gold);}
+.bg-gold{background-color:var(--gold);}
+.border-gold{border-color:var(--gold);}
+.bg-offwhite{background-color:var(--off-white);}
+
+/* Buttons */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  padding:.85rem 1.75rem;
+  border-radius:9999px;
+  font-weight:600;
+  font-size:.95rem;
+  transition:all .2s ease;
+  white-space:nowrap;
+}
+.btn-primary{
+  background-color:var(--gold);
+  color:var(--navy-deep);
+}
+.btn-primary:hover{
+  background-color:var(--gold-light);
+  transform:translateY(-1px);
+}
+.btn-secondary{
+  background-color:transparent;
+  color:#fff;
+  border:1.5px solid rgba(255,255,255,.7);
+}
+.btn-secondary:hover{
+  background-color:rgba(255,255,255,.12);
+  border-color:#fff;
+}
+.btn-outline-navy{
+  background-color:transparent;
+  color:var(--navy);
+  border:1.5px solid var(--navy);
+}
+.btn-outline-navy:hover{
+  background-color:var(--navy);
+  color:#fff;
+}
+.btn-dark{
+  background-color:var(--navy);
+  color:#fff;
+}
+.btn-dark:hover{
+  background-color:var(--navy-deep);
+}
+
+/* Nav underline for active page */
+.nav-link{
+  position:relative;
+  padding-bottom:4px;
+  color:var(--navy);
+  font-weight:500;
+  font-size:.925rem;
+}
+.nav-link:hover{color:var(--gold);}
+.nav-link.active{color:var(--navy);font-weight:700;}
+.nav-link.active::after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:0;
+  height:2px;
+  background-color:var(--gold);
+}
+
+/* Cards */
+.card{
+  background:#fff;
+  border-radius:1rem;
+  box-shadow:0 1px 2px rgba(20,28,48,.05), 0 8px 24px -12px rgba(20,28,48,.12);
+  transition:transform .2s ease, box-shadow .2s ease;
+}
+.card:hover{
+  transform:translateY(-4px);
+  box-shadow:0 12px 32px -12px rgba(20,28,48,.22);
+}
+.icon-badge{
+  width:3rem;height:3rem;
+  border-radius:.75rem;
+  background-color:#FBF3E3;
+  color:var(--gold);
+  display:flex;align-items:center;justify-content:center;
+}
+.learn-more{
+  color:var(--gold);
+  font-weight:600;
+  font-size:.9rem;
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  transition:gap .15s ease;
+}
+.learn-more:hover{gap:.55rem;}
+
+/* Mobile nav */
+#mobile-menu{transition:max-height .3s ease;}
+
+/* Form fields */
+.field{
+  width:100%;
+  border:1px solid #D9DCE3;
+  border-radius:.6rem;
+  padding:.75rem 1rem;
+  font-size:.95rem;
+  background:#fff;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+.field:focus{
+  outline:none;
+  border-color:var(--gold);
+  box-shadow:0 0 0 3px rgba(200,155,60,.18);
+}
+label.field-label{
+  font-size:.85rem;
+  font-weight:600;
+  color:var(--navy);
+  margin-bottom:.35rem;
+  display:block;
+}
+
+/* Utility */
+.eyebrow{
+  color:var(--gold);
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  font-size:.78rem;
+}
+.section-heading{color:var(--navy);}
+.divider-gold{width:3rem;height:3px;background:var(--gold);}
+
+.skip-link{
+  position:absolute;left:-9999px;top:0;background:var(--navy);color:#fff;padding:.6rem 1rem;z-index:100;
+}
+.skip-link:focus{left:1rem;top:1rem;}
+
+/* ---------------- Hero: staggered float-in text ---------------- */
+@keyframes heroFloatIn {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-line{
+  display:block;
+  opacity:0;
+  transform:translateY(28px);
+  animation-name: heroFloatIn;
+  animation-duration:.85s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+/* Line 1: 'Own Property.' floats in first */
+.hero-line:nth-of-type(1){ animation-delay:.15s; }
+/* Line 2: 'Build Wealth.' floats in second */
+.hero-line:nth-of-type(2){ animation-delay:.5s; }
+/* Line 3: 'We'll Manage the Rest.' floats in third */
+.hero-line:nth-of-type(3){ animation-delay:.85s; }
+
+/* Paragraph animates in right after the heading lines finish
+   (line 3 starts at .85s + .85s duration = 1.7s) */
+.hero-para{
+  opacity:0;
+  transform:translateY(20px);
+  animation-name: heroFloatIn;
+  animation-duration:.8s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  animation-delay: 1.7s;
+}
+
+/* Hero CTA links: strictly white text over the dark hero image */
+.hero-cta-primary,
+.hero-cta-secondary{
+  color:#ffffff !important;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .hero-line,
+  .hero-para{
+    animation:none;
+    opacity:1;
+    transform:none;
+  }
+}
+
+/* ---------------- Services page: staggered card grid reveal ---------------- */
+@keyframes cardFadeRise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal-card{
+  opacity:0;
+  transform:translateY(20px);
+  animation-name: cardFadeRise;
+  animation-duration:.6s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+/* Sequential left-to-right reveal, 100ms apart, following grid source order */
+.services-grid .reveal-card:nth-child(1){ animation-delay:.1s; }
+.services-grid .reveal-card:nth-child(2){ animation-delay:.2s; }
+.services-grid .reveal-card:nth-child(3){ animation-delay:.3s; }
+.services-grid .reveal-card:nth-child(4){ animation-delay:.4s; }
+.services-grid .reveal-card:nth-child(5){ animation-delay:.5s; }
+.services-grid .reveal-card:nth-child(6){ animation-delay:.6s; }
+
+/* ---------------- Services page: scroll-triggered section fade-in ---------------- */
+/* Starts hidden/offset; main.js toggles .is-visible via IntersectionObserver
+   as each section scrolls into view, and the transition below eases it in. */
+.reveal-on-scroll{
+  opacity:0;
+  transform:translateY(30px);
+  transition: opacity .8s ease-out, transform .8s ease-out;
+}
+.reveal-on-scroll.is-visible{
+  opacity:1;
+  transform:translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .reveal-card,
+  .reveal-on-scroll{
+    animation:none;
+    transition:none;
+    opacity:1;
+    transform:none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important; animation:none !important;}
+}
+
+
