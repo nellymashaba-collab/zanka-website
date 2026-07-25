@@ -1,4 +1,4 @@
-// Zanka Group — Lease Management Module 17h45
+// Zanka Group — Lease Management Module 19h57
 // Requires supabase-client.js and auth.js loaded first.
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
@@ -820,13 +820,24 @@ async function showAuditTrail(leaseId) {
 async function notifyLeaseEvent(leaseId, eventType, extra = {}) {
   const { data: { session } } = await supabaseClient.auth.getSession();
   try {
-    await fetch(`${SUPABASE_URL}/functions/v1/dms-notifications`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/dms-notifications`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
       body: JSON.stringify({ lease_event: eventType, lease_id: leaseId, ...extra }),
     });
+    // Previously this response was never checked at all — a failing
+    // Edge Function (e.g. an unhandled event type, a DB error inside
+    // it) would fail completely silently, which is exactly what made
+    // "FICA approved but no signature rows created" so hard to
+    // diagnose. Surface it clearly now instead.
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`dms-notifications returned ${res.status} for event '${eventType}':`, body);
+      alert(`The lease notification failed (${res.status}). Check the browser console and Edge Function logs for details:\n\n${body.slice(0, 300)}`);
+    }
   } catch (err) {
     console.error('Lease notification failed:', err);
+    alert('The lease notification request itself failed to send: ' + err.message);
   }
 }
 
