@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await handleLogout('tenant-login.html');
+  await checkPendingLeaseSignature(currentProfile.id);
   await loadTenantData(currentProfile.id);
   await loadLeaseInspections(currentProfile.id);
   wireMaintenanceForm(currentProfile.id);
@@ -22,6 +23,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   wirePayNow(currentProfile.id);
   await wireRentalBreakdown(currentProfile.id);
 });
+
+// This was the actual gap behind "FICA approved but nothing asked me
+// to sign" — the dashboard had no UI at all pointing to lease-sign.html,
+// only the (separate, file-based) Lease Documents card below, which
+// has nothing to show until AFTER signing produces a real document.
+// A lease_signatures row with otp_code set but signed_at still null
+// means it's genuinely this tenant's turn to sign right now.
+async function checkPendingLeaseSignature(tenantId) {
+  const { data: pending } = await supabaseClient
+    .from('lease_signatures')
+    .select('id, lease_id, leases:lease_id ( properties:property_id ( address ) )')
+    .eq('signed_by', tenantId)
+    .is('signed_at', null)
+    .not('otp_code', 'is', null);
+
+  if (!pending || pending.length === 0) return;
+
+  const main = document.getElementById('main');
+  if (!main) return;
+
+  const banner = document.createElement('div');
+  banner.className = 'max-w-7xl mx-auto px-5 sm:px-8 pt-6';
+  banner.innerHTML = pending.map(p => `
+    <div class="bg-gold/10 border border-gold rounded-xl p-5 mb-4 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <p class="font-semibold text-navy">Your lease is ready to sign</p>
+        <p class="text-sm text-gray-600">${p.leases?.properties?.address || 'A property'} — action needed to complete your lease.</p>
+      </div>
+      <a href="lease-sign.html?lease=${p.lease_id}" class="btn btn-primary">Sign Now →</a>
+    </div>
+  `).join('');
+  main.prepend(banner);
+}
 
 async function loadTenantData(tenantId) {
   // Lease history — a tenant can have multiple lease rows over time
