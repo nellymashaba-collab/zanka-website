@@ -1,4 +1,4 @@
-// Zanka Group — Tenant dashboard 17h44
+// Zanka Group — Tenant dashboard 20h35
 // Requires supabase-client.js and auth.js loaded first.
 
 let currentProfile = null;
@@ -31,30 +31,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 // A lease_signatures row with otp_code set but signed_at still null
 // means it's genuinely this tenant's turn to sign right now.
 async function checkPendingLeaseSignature(tenantId) {
-  const { data: pending } = await supabaseClient
-    .from('lease_signatures')
-    .select('id, lease_id, leases:lease_id ( properties:property_id ( address ) )')
-    .eq('signed_by', tenantId)
-    .is('signed_at', null)
-    .not('otp_code', 'is', null);
+  try {
+    const { data: pending } = await supabaseClient
+      .from('lease_signatures')
+      .select('id, lease_id, leases:lease_id ( properties:property_id ( address ) )')
+      .eq('signed_by', tenantId)
+      .is('signed_at', null)
+      .not('otp_code', 'is', null);
 
-  if (!pending || pending.length === 0) return;
+    if (!pending || pending.length === 0) return;
 
-  const main = document.getElementById('main');
-  if (!main) return;
+    const main = document.getElementById('main');
+    if (!main) return;
 
-  const banner = document.createElement('div');
-  banner.className = 'max-w-7xl mx-auto px-5 sm:px-8 pt-6';
-  banner.innerHTML = pending.map(p => `
-    <div class="bg-gold/10 border border-gold rounded-xl p-5 mb-4 flex items-center justify-between flex-wrap gap-3">
-      <div>
-        <p class="font-semibold text-navy">Your lease is ready to sign</p>
-        <p class="text-sm text-gray-600">${p.leases?.properties?.address || 'A property'} — action needed to complete your lease.</p>
+    const banner = document.createElement('div');
+    banner.className = 'max-w-7xl mx-auto px-5 sm:px-8 pt-6';
+    banner.innerHTML = pending.map(p => `
+      <div class="bg-gold/10 border border-gold rounded-xl p-5 mb-4 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p class="font-semibold text-navy">Your lease is ready to sign</p>
+          <p class="text-sm text-gray-600">${p.leases?.properties?.address || 'A property'} — action needed to complete your lease.</p>
+        </div>
+        <a href="lease-sign.html?lease=${p.lease_id}" class="btn btn-primary">Sign Now →</a>
       </div>
-      <a href="lease-sign.html?lease=${p.lease_id}" class="btn btn-primary">Sign Now →</a>
-    </div>
-  `).join('');
-  main.prepend(banner);
+    `).join('');
+    main.prepend(banner);
+  } catch (err) {
+    // Never let a banner-check failure block the rest of the page —
+    // this is exactly what happened when this had no try/catch: the
+    // whole dashboard (including the Lease Documents card) went blank
+    // because this awaited call threw before loadTenantData() ran.
+    console.error('checkPendingLeaseSignature failed (non-blocking):', err);
+  }
 }
 
 async function loadTenantData(tenantId) {
