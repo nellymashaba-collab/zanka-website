@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireMaintenanceForm(currentProfile.id);
   wireNoticeForm(currentProfile.id);
   wireDetailsForm(currentProfile);
-  wirePayNow(currentProfile.id);
+  await wirePayNow(currentProfile.id);
   await wireRentalBreakdown(currentProfile.id);
 });
 
@@ -465,12 +465,63 @@ function wireDetailsForm(profile) {
   });
 }
 
-function wirePayNow(tenantId) {
+async function wirePayNow(tenantId) {
   const btn = document.getElementById('pay-rent-btn');
   if (!btn) return;
-  btn.addEventListener('click', () => {
-    supabaseClient.from('payments').insert([{ tenant_id: tenantId, amount: 0, status: 'Pending' }])
-      .then(() => loadTenantData(tenantId));
-    alert('Connect a payment gateway (e.g. PayFast, Yoco, or Paystack) to accept real rent payments here.');
+
+  // Find the tenant's actual outstanding payment, linked to a real
+  // invoice — replaces the old stub that just inserted a blank R0 row
+  // and told the admin to "connect a payment gateway."
+  const { data: pending } = await supabaseClient
+    .from('payments')
+    .select('id, amount, due_date, tenant_invoice_id, tenant_invoices:tenant_invoice_id ( invoice_number )')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'Pending')
+    .order('due_date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!pending || !pending.amount) {
+    btn.textContent = 'Nothing due';
+    btn.disabled = true;
+    return;
+  }
+
+  btn.textContent = `Pay ${Number(pending.amount).toLocaleString(undefined, { style: 'currency', currency: 'ZAR' })} Now →`;
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Redirecting to secure payment…';
+    try {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/payfast-initiate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ payment_id: pending.id }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.fields || !result.action_url) {
+        throw new Error(result.error || 'Could not start the payment — please try again.');
+      }
+
+      // PayFast requires a genuine HTML form POST, not a fetch/redirect
+      // — build one dynamically and submit it.
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = result.action_url;
+      Object.entries(result.fields).forEach(([key, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      alert(err.message || 'Payment could not be started.');
+      btn.disabled = false;
+      btn.textContent = `Pay ${Number(pending.amount).toLocaleString(undefined, { style: 'currency', currency: 'ZAR' })} Now →`;
+    }
   });
 }
