@@ -1,4 +1,4 @@
-// Zanka Group — Lease Management Module 19h57
+// Zanka Group — Lease Management Module 20h08
 // Requires supabase-client.js and auth.js loaded first.
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
@@ -512,28 +512,7 @@ async function setFicaStatus(leaseId, status) {
 
   if (status === 'Approved') {
     await notifyLeaseEvent(leaseId, 'lease_fica_approved');
-
-    // Fallback in case the Edge Function's email/SMS delivery fails —
-    // show whatever OTP(s) are actually issued right now. Only shows
-    // codes that exist: OTPs are issued sequentially (Tenant, then
-    // Guarantor if one exists, then Owner), so right after FICA
-    // approval this will normally show just the Tenant's code — the
-    // others appear here on their own turn as each prior party signs.
-    const { data: issuedOtps } = await supabaseClient
-      .from('lease_signatures')
-      .select('otp_code, signed_at, lease_parties:party_id ( party_type, full_name )')
-      .eq('lease_id', leaseId)
-      .not('otp_code', 'is', null)
-      .is('signed_at', null);
-
-    if (issuedOtps && issuedOtps.length > 0) {
-      const lines = issuedOtps.map(s =>
-        `${s.lease_parties?.party_type || 'Signer'} (${s.lease_parties?.full_name || 'Unknown'}): ${s.otp_code}`
-      ).join('\n');
-      alert(`FICA approved. If email/SMS delivery fails, these OTP codes can be relayed manually:\n\n${lines}`);
-    } else {
-      alert('FICA approved. No OTP has been issued yet — this can take a moment, or check the Edge Function logs if it doesn\'t appear shortly.');
-    }
+    alert('FICA approved. Click "Send for Signature" on this lease in the register below to actually issue the tenant\'s OTP and begin signing.');
   }
 
   await loadFicaReviewList();
@@ -779,7 +758,7 @@ async function sendForSignature(leaseId) {
 
   await notifyLeaseEvent(leaseId, 'lease_signature_request', { otp, recipient_role: 'tenant' });
 
-  alert('Signature request sent to the tenant.');
+  alert(`Signature request sent to the tenant.\n\nIf email/SMS delivery fails, this is the Tenant's OTP — it can be relayed manually:\n\n${otp}`);
   await loadRegister();
   await loadKpis();
 }
