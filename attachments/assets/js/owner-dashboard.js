@@ -10,24 +10,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await handleLogout('owner-login.html');
-  await checkInvestorRepresentativeLink(profile.id);
   await loadOwnerData(profile.id);
 });
-
-// If this owner is also linked as a representative for an investor
-// entity (the "front person" pattern — no separate investor login),
-// show the crossover button. Same account, same session, just a
-// different portal to view.
-async function checkInvestorRepresentativeLink(ownerId) {
-  const { data: links } = await supabaseClient
-    .from('investor_representatives').select('entity_id, investor_entities ( entity_name )').eq('profile_id', ownerId);
-
-  const link = document.getElementById('investor-portal-link');
-  if (link && links && links.length > 0) {
-    link.classList.remove('hidden');
-    link.title = `Representing ${links.map(l => l.investor_entities?.entity_name).filter(Boolean).join(', ')}`;
-  }
-}
 
 async function loadOwnerData(ownerId) {
   // Properties owned + rental income / occupancy
@@ -78,15 +62,15 @@ async function loadOwnerData(ownerId) {
     </div>`);
   setText('stat-open-maintenance', (maintenance || []).filter(m => m.status !== 'Completed').length);
 
-  // Statements, inspection reports, invoices, levy statements — all
-  // stored as file rows with a URL. loadDocs fetches every matching row.
+  // Statements, lease docs, inspection reports, invoices, levy statements —
+  // all stored as file rows with a URL. loadDocs fetches every matching row
+  // (no .single()/.maybeSingle()), so leases naturally return full history.
   await loadDocs('statements', 'statements-list', ownerId);
-  await loadOwnerLeases(ownerId);
+  await loadDocs('leases', 'leases-list', ownerId, 'owner_id');
   await loadDocs('inspections', 'inspections-list', ownerId);
   await loadDocs('contractor_invoices', 'invoices-list', ownerId);
   await loadDocs('levy_statements', 'levies-list', ownerId);
   await loadLeaseInspections(ownerId);
-  await loadPendingSignatures(ownerId);
 
   renderPerformanceChart(properties);
   wireRentalBreakdown((properties || []).map(p => p.id));
@@ -113,108 +97,14 @@ async function loadLeaseInspections(ownerId) {
   }
 
   const typeLabels = { Move_In: 'Move-In', Routine: 'Routine', Move_Out: 'Move-Out' };
-  container.innerHTML = inspections.map(i => {
-    let badgeClass, badgeText;
-    if (i.owner_signed_at) {
-      badgeClass = 'bg-green-100 text-green-700';
-      badgeText = 'Signed';
-    } else if (i.owner_otp_code) {
-      badgeClass = 'bg-gold-light text-navy-deep';
-      badgeText = 'Needs your signature';
-    } else {
-      badgeClass = 'bg-gray-100 text-gray-500';
-      badgeText = 'Awaiting request';
-    }
-    return `
-    <a href="inspection-history.html?id=${i.id}" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
+  container.innerHTML = inspections.map(i => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <div>
         <p class="font-semibold text-navy text-sm">${typeLabels[i.inspection_type] || i.inspection_type} &middot; ${i.properties?.address || '—'}</p>
         <p class="text-xs text-gray-500">${new Date(i.inspection_date).toLocaleDateString()}${i.overall_condition ? ' · ' + i.overall_condition : ''}</p>
       </div>
-      <span class="text-xs font-semibold px-3 py-1 rounded-full ${badgeClass}">${badgeText}</span>
-    </a>`;
-  }).join('');
-}
-
-// The previous version of this filtered `leases` by a column called
-// `owner_id` — that column has never existed on `leases`. Ownership
-// only exists via `properties.owner_id`, so this joins through that
-// instead. This was broken for every owner, not something this
-// session's changes caused.
-async function loadOwnerLeases(ownerId) {
-  const { data: leases } = await supabaseClient
-    .from('leases')
-    .select('*, properties!inner ( address, owner_id )')
-    .eq('properties.owner_id', ownerId)
-    .order('start_date', { ascending: false });
-
-  const container = document.getElementById('leases-list');
-  if (!container) return;
-
-  if (!leases || leases.length === 0) {
-    container.innerHTML = `<p class="text-sm text-gray-400 py-4">Nothing to show yet.</p>`;
-    return;
-  }
-
-  container.innerHTML = leases.map(l => {
-    const range = [l.start_date, l.end_date].filter(Boolean).join(' – ');
-    // No file_url until the lease is actually fully signed — no PDF
-    // generation step exists yet, so show status instead of a dead link.
-    if (!l.file_url) {
-      return `
-        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-          <div>
-            <span class="text-navy font-medium block">${l.properties?.address || 'Lease'}</span>
-            ${range ? `<span class="text-xs text-gray-500">${range}</span>` : ''}
-          </div>
-          <span class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">${l.status || 'Draft'}</span>
-        </div>`;
-    }
-    return `
-      <a href="${l.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
-        <div>
-          <span class="text-navy font-medium block">${l.properties?.address || 'Lease'}</span>
-          ${range ? `<span class="text-xs text-gray-500">${range}</span>` : ''}
-        </div>
-        <span class="learn-more">Download →</span>
-      </a>`;
-  }).join('');
-}
-
-// Same pending-signature review pattern as the tenant dashboard —
-// owners now sign too (v2), and need the same in-app path rather than
-// relying solely on the emailed link.
-async function loadPendingSignatures(ownerId) {
-  const { data: rawSignatures } = await supabaseClient
-    .from('lease_signatures')
-    .select('*, leases ( id, properties ( address ) )')
-    .eq('signed_by', ownerId)
-    .eq('otp_verified', false);
-
-  const seen = new Set();
-  const signatures = (rawSignatures || []).filter(s => !seen.has(s.lease_id) && seen.add(s.lease_id));
-
-  const container = document.getElementById('pending-signatures-list');
-  if (!container) return;
-
-  if (!signatures || signatures.length === 0) {
-    container.innerHTML = '';
-    document.getElementById('pending-signatures-card')?.classList.add('hidden');
-    return;
-  }
-
-  document.getElementById('pending-signatures-card')?.classList.remove('hidden');
-  container.innerHTML = signatures.map(s => `
-    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 gap-3">
-      <div>
-        <p class="font-semibold text-navy text-sm">${s.leases?.properties?.address || 'Lease #' + s.lease_id}</p>
-        <p class="text-xs text-gray-500">Awaiting your signature as owner</p>
-      </div>
-      ${s.otp_code
-        ? `<a href="lease-sign.html?lease=${s.lease_id}" class="btn btn-primary !py-2 text-sm">Review &amp; Sign</a>`
-        : `<span class="text-xs text-gray-400 italic">Waiting for your turn</span>`}
-    </div>
-  `).join('');
+      <span class="text-xs font-semibold px-3 py-1 rounded-full ${i.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${i.status}</span>
+    </div>`).join('');
 }
 
 async function loadDocs(table, elementId, ownerId, ownerColumn = 'owner_id') {
@@ -223,11 +113,20 @@ async function loadDocs(table, elementId, ownerId, ownerColumn = 'owner_id') {
     .select('*')
     .eq(ownerColumn, ownerId)
     .order('created_at', { ascending: false });
-  renderList(elementId, data, (d) => `
-    <a href="${d.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
-      <span class="text-navy font-medium">${d.title || d.name || 'Document'}</span>
-      <span class="learn-more">Download →</span>
-    </a>`);
+  renderList(elementId, data, (d) => {
+    if (!d.file_url) {
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 -mx-2 px-2">
+          <span class="text-navy font-medium">${d.title || d.name || 'Document'}</span>
+          <span class="text-xs text-gray-400 italic">No document attached</span>
+        </div>`;
+    }
+    return `
+      <a href="${d.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
+        <span class="text-navy font-medium">${d.title || d.name || 'Document'}</span>
+        <span class="learn-more">Download →</span>
+      </a>`;
+  });
 }
 
 function renderPerformanceChart(properties) {
