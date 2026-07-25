@@ -1,4 +1,4 @@
-// Zanka Group — Owner dashboard chnaged it
+// Zanka Group — Owner dashboard 17h45
 // Requires supabase-client.js and auth.js loaded first.
 
 document.addEventListener('DOMContentLoaded', async () => {
