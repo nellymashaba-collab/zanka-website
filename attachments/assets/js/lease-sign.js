@@ -1,4 +1,4 @@
-// Zanka Group — Lease electronic signing page
+// Zanka Group — Lease electronic signing page 17h46
 // Requires supabase-client.js and auth.js loaded first.
 // Reached via ?lease=<lease_id> from the emailed signature request.
 
