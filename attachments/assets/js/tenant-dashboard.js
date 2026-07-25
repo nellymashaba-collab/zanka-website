@@ -32,6 +32,16 @@ async function loadTenantData(tenantId) {
     .order('start_date', { ascending: false });
   renderDocList('lease-list', leases, (l) => {
     const range = [l.start_date, l.end_date].filter(Boolean).join(' – ');
+    if (!l.file_url) {
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 -mx-2 px-2">
+          <div>
+            <span class="text-navy font-medium block">${l.title || 'Lease Agreement'}</span>
+            ${range ? `<span class="text-xs text-gray-500">${range}</span>` : ''}
+          </div>
+          <span class="text-xs text-gray-400 italic">No document attached</span>
+        </div>`;
+    }
     return `
       <a href="${l.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
         <div>
