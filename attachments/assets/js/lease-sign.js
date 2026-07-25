@@ -1,4 +1,4 @@
-// Zanka Group — Lease electronic signing page 17h46
+// Zanka Group — Lease electronic signing page 20h15
 // Requires supabase-client.js and auth.js loaded first.
 // Reached via ?lease=<lease_id> from the emailed signature request.
 
@@ -224,11 +224,30 @@ async function advanceLeaseAfterSignature() {
 
   const nextParty = byType[sequence[doneUpToIndex]];
   if (nextParty && !nextParty.otp_code) {
-    // This party hasn't been issued an OTP yet, and it's their turn —
-    // issue it now. This is the sequential trigger, generalized to
-    // whichever party is next rather than hardcoded to "guarantor."
+    // Matches sendForSignature()'s proven working pattern: generate
+    // and WRITE the OTP client-side ourselves, rather than delegating
+    // that to the Edge Function (which is what the previous version
+    // of this code did — the same mistake that made FICA-approval's
+    // OTP checking fail earlier, just here instead). The Edge Function
+    // call afterward is only for the email/notification, same as
+    // sendForSignature — if that delivery fails, the OTP still exists
+    // and can be relayed manually.
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const expires = new Date(); expires.setHours(expires.getHours() + 48);
+
+    const { error: otpError } = await supabaseClient
+      .from('lease_signatures')
+      .update({ otp_code: otp, otp_expires_at: expires.toISOString() })
+      .eq('id', nextParty.id);
+
+    if (otpError) {
+      console.error('Failed to issue next party\'s OTP:', otpError.message);
+      return;
+    }
+
     await notifyLeaseEvent('lease_signature_request', {
       recipient_role: sequence[doneUpToIndex].toLowerCase(),
+      otp,
       issue_otp_for_signature_id: nextParty.id,
     });
   }
