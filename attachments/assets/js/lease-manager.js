@@ -335,33 +335,6 @@ async function handleWizardSubmit(e) {
     }]).select().single();
     if (leaseError) throw leaseError;
 
-    // Everything from here on is wrapped so that ANY failure — an
-    // escalation insert, a document upload, whatever — deletes the
-    // lease we just created rather than leaving an orphaned Draft
-    // lease with no documents sitting in the register. Related rows
-    // (lease_escalations, lease_documents, lease_audit_logs) all
-    // reference leases with ON DELETE CASCADE, so deleting the lease
-    // cleans up any partial data automatically.
-    try {
-      await createEscalationsAndDocuments(lease, escalations, monthlyRent);
-    } catch (innerErr) {
-      await supabaseClient.from('leases').delete().eq('id', lease.id);
-      throw new Error(`${innerErr.message} — the incomplete lease was removed, please try again.`);
-    }
-
-    successEl.textContent = 'Lease saved as Draft. It now needs FICA approval before it can be sent for signature.';
-    successEl.classList.remove('hidden');
-    setTimeout(() => { window.location.href = 'lease-dashboard.html'; }, 1800);
-  } catch (err) {
-    errorEl.textContent = err.message || 'Something went wrong.';
-    errorEl.classList.remove('hidden');
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Save Draft';
-  }
-}
-
-async function createEscalationsAndDocuments(lease, escalations, monthlyRent) {
     // 1b. Record any escalation periods. previous_rental_amount for the
     // first escalation is the base rent; each subsequent one compounds
     // off the previous escalation's new_rental_amount, matching the
@@ -406,6 +379,17 @@ async function createEscalationsAndDocuments(lease, escalations, monthlyRent) {
       previous_state: null,
       new_state: 'Draft',
     }]);
+
+    successEl.textContent = 'Lease saved as Draft. It now needs FICA approval before it can be sent for signature.';
+    successEl.classList.remove('hidden');
+    setTimeout(() => { window.location.href = 'lease-dashboard.html'; }, 1800);
+  } catch (err) {
+    errorEl.textContent = err.message || 'Something went wrong.';
+    errorEl.classList.remove('hidden');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Save Draft';
+  }
 }
 
 function uploadLeaseFile(file, path) {
@@ -430,7 +414,6 @@ function uploadLeaseFile(file, path) {
    ================================================================ */
 let registerLeases = [];
 let registerSort = { key: 'end_date', dir: 'asc' };
-let registerSignaturesByLease = {};
 
 async function initDashboard() {
   await loadKpis();
@@ -465,14 +448,10 @@ async function loadKpis() {
 }
 
 async function loadFicaReviewList() {
-  // Only Draft leases — anything already Active predates this module
-  // and got fica_status = 'Pending' purely as a column default when
-  // that column was added, not because it's actually awaiting review.
   const { data: leases } = await supabaseClient
     .from('leases')
     .select('id, fica_status, properties ( address ), profiles:tenant_id ( full_name )')
-    .eq('fica_status', 'Pending')
-    .eq('status', 'Draft');
+    .eq('fica_status', 'Pending');
 
   const container = document.getElementById('fica-review-list');
   if (!leases || leases.length === 0) {
@@ -500,11 +479,16 @@ async function loadFicaReviewList() {
 }
 
 async function viewFicaDocument(leaseId) {
+  // Same mobile popup-blocker fix as the tenant Invoices download:
+  // window.open() must happen synchronously within the click to work
+  // reliably on mobile browsers, so open a blank tab first and redirect
+  // it once we actually have the signed URL.
+  const newTab = window.open('', '_blank', 'noopener');
   const { data: doc } = await supabaseClient.from('lease_documents').select('storage_path').eq('lease_id', leaseId).eq('category', 'Tenant_FICA').single();
-  if (!doc) { alert('No FICA document found for this lease.'); return; }
+  if (!doc) { if (newTab) newTab.close(); alert('No FICA document found for this lease.'); return; }
   const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(doc.storage_path, 300);
-  if (error) { alert('Could not open file: ' + error.message); return; }
-  window.open(data.signedUrl, '_blank', 'noopener');
+  if (error) { if (newTab) newTab.close(); alert('Could not open file: ' + error.message); return; }
+  if (newTab) { newTab.location.href = data.signedUrl; } else { window.location.href = data.signedUrl; }
 }
 
 async function setFicaStatus(leaseId, status) {
@@ -527,12 +511,7 @@ async function setFicaStatus(leaseId, status) {
   }]);
 
   if (status === 'Approved') {
-    try {
-      await notifyLeaseEvent(leaseId, 'lease_fica_approved');
-    } catch (err) {
-      console.error('FICA approval email failed:', err);
-      alert('FICA approved, but the notification email failed to send: ' + err.message);
-    }
+    await notifyLeaseEvent(leaseId, 'lease_fica_approved');
   }
 
   await loadFicaReviewList();
@@ -627,51 +606,7 @@ async function loadRegister() {
   if (error) { tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-sm text-red-500 text-center">${error.message}</td></tr>`; return; }
 
   registerLeases = leases || [];
-
-  // Batch-fetch every signature for leases still mid-signing, so we
-  // can flag stuck sequences directly on the register — this is the
-  // actual fix for "nobody who can act on a failed OTP ever finds out
-  // about it." Previously the only signal was a warning shown to
-  // whoever happened to be signing at that moment, which neither
-  // admin nor the next signer (who hasn't even visited the page yet)
-  // would ever see.
-  const pendingLeaseIds = registerLeases.filter(l => l.status === 'Pending Signature').map(l => l.id);
-  if (pendingLeaseIds.length > 0) {
-    const { data: signatures } = await supabaseClient
-      .from('lease_signatures').select('*').in('lease_id', pendingLeaseIds).order('created_at', { ascending: true });
-    registerSignaturesByLease = {};
-    (signatures || []).forEach(s => {
-      if (!registerSignaturesByLease[s.lease_id]) registerSignaturesByLease[s.lease_id] = [];
-      registerSignaturesByLease[s.lease_id].push(s);
-    });
-  } else {
-    registerSignaturesByLease = {};
-  }
-
   renderRegister();
-}
-
-// Tenant -> Guarantor -> Owner. A lease is "stuck" if an earlier party
-// in this sequence is verified, but the next party's OTP was never
-// issued (otp_code is still null) — that's exactly the sequential
-// trigger silently failing.
-function findStuckParty(leaseId) {
-  const sigs = registerSignaturesByLease[leaseId];
-  if (!sigs || sigs.length === 0) return null;
-
-  const order = ['Tenant', 'Guarantor', 'Owner'];
-  const byType = {};
-  sigs.forEach(s => { byType[s.party_type] = s; });
-  const sequence = order.filter(type => byType[type]);
-
-  for (let i = 0; i < sequence.length - 1; i++) {
-    const current = byType[sequence[i]];
-    const next = byType[sequence[i + 1]];
-    if (current.otp_verified && !next.otp_verified && !next.otp_code) {
-      return { partyType: sequence[i + 1], signatureId: next.id };
-    }
-  }
-  return null;
 }
 
 function renderRegister() {
@@ -702,16 +637,11 @@ function renderRegister() {
   const tbody = document.getElementById('register-tbody');
   if (rows.length === 0) { tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-sm text-gray-400 text-center">No leases match.</td></tr>`; return; }
 
-  tbody.innerHTML = rows.map(l => {
-    const stuck = l.status === 'Pending Signature' ? findStuckParty(l.id) : null;
-    return `
-    <tr class="border-b border-gray-100 text-sm ${stuck ? 'bg-red-50' : ''}">
+  tbody.innerHTML = rows.map(l => `
+    <tr class="border-b border-gray-100 text-sm">
       <td class="py-3 px-3 text-navy font-medium">${l.properties?.address || '—'}</td>
       <td class="py-3 px-3 text-gray-600">${l.profiles?.full_name || '—'}</td>
-      <td class="py-3 px-3">
-        <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor(l.status)}">${l.status}</span>
-        ${stuck ? `<span class="block text-xs text-red-600 font-semibold mt-1">⚠ ${stuck.partyType}'s code never issued</span>` : ''}
-      </td>
+      <td class="py-3 px-3"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor(l.status)}">${l.status}</span></td>
       <td class="py-3 px-3 text-gray-600">${l.end_date ? new Date(l.end_date).toLocaleDateString() : '—'}</td>
       <td class="py-3 px-3">
         <div class="flex flex-wrap gap-2">
@@ -719,56 +649,14 @@ function renderRegister() {
           ${l.status === 'Draft' && l.fica_status === 'Approved' ? `<button data-send-signature="${l.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-navy text-white hover:bg-navy-deep transition">Send for Signature</button>` : ''}
           ${l.status === 'Draft' && l.fica_status !== 'Approved' ? `<span class="text-xs text-gray-400 italic">Awaiting FICA</span>` : ''}
           ${['Active', 'Renewal_Due'].includes(l.status) ? `<button data-renewal-notice="${l.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full border border-gray-300 text-navy hover:border-gold transition">Renewal Notice</button>` : ''}
-          ${stuck ? `<button data-resend-otp="${l.id}" data-signature-id="${stuck.signatureId}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition">Resend ${stuck.partyType} Code</button>` : ''}
         </div>
       </td>
     </tr>
-  `;
-  }).join('');
+  `).join('');
 
   tbody.querySelectorAll('[data-audit]').forEach(btn => btn.addEventListener('click', () => showAuditTrail(btn.dataset.audit)));
   tbody.querySelectorAll('[data-send-signature]').forEach(btn => btn.addEventListener('click', () => sendForSignature(btn.dataset.sendSignature)));
   tbody.querySelectorAll('[data-renewal-notice]').forEach(btn => btn.addEventListener('click', () => triggerRenewalNotice(btn.dataset.renewalNotice)));
-  tbody.querySelectorAll('[data-resend-otp]').forEach(btn => btn.addEventListener('click', () => resendStuckOtp(btn.dataset.resendOtp, btn.dataset.signatureId, btn)));
-}
-
-// Admin-triggered, explicit — no longer relies on it happening
-// implicitly (and silently, when it fails) during someone else's
-// sign flow. Uses the fixed notifyLeaseEvent(), which now actually
-// throws a real error instead of swallowing failures.
-async function resendStuckOtp(leaseId, signatureId, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-  const { data: sigRow } = await supabaseClient.from('lease_signatures').select('party_type').eq('id', signatureId).single();
-
-  let emailError = null;
-  try {
-    await notifyLeaseEvent(leaseId, 'lease_signature_request', {
-      recipient_role: sigRow.party_type.toLowerCase(),
-      issue_otp_for_signature_id: signatureId,
-    });
-  } catch (err) {
-    emailError = err.message;
-  }
-
-  // The OTP itself is generated and saved server-side for
-  // Owner/Guarantor — unlike the Tenant's code (generated client-side
-  // in sendForSignature, so already visible to admin on failure), this
-  // one was never visible to the browser at all before now. Pulling it
-  // straight from the database rather than depending on it, so admin
-  // has it either way, regardless of whether the email itself worked.
-  const { data: updated } = await supabaseClient.from('lease_signatures').select('otp_code').eq('id', signatureId).single();
-  const code = updated?.otp_code;
-
-  if (emailError) {
-    alert(`Code generated for the ${sigRow.party_type}, but the notification email failed: ${emailError}\n\nTheir code is ${code} — you may want to share it directly.`);
-  } else {
-    alert(`New verification code sent to the ${sigRow.party_type}. Their code is ${code}, in case you need to share it directly.`);
-  }
-
-  await loadRegister();
-  btn.disabled = false;
-  btn.textContent = 'Resend Code';
 }
 
 function statusColor(status) {
@@ -813,16 +701,6 @@ async function sendForSignature(leaseId) {
 
   if (!lease) { alert('Lease not found.'); return; }
   if (lease.fica_status !== 'Approved') { alert('FICA must be approved before sending for signature.'); return; }
-
-  // Guard against clicking this twice on the same lease — nothing
-  // previously stopped a second click from creating duplicate
-  // lease_signatures rows, which broke .maybeSingle() lookups on the
-  // signing page and duplicated the tenant's dashboard card.
-  const { data: existing } = await supabaseClient.from('lease_signatures').select('id').eq('lease_id', leaseId).limit(1);
-  if (existing && existing.length > 0) {
-    alert('This lease has already been sent for signature. Use "Resend Code" on the register if a party needs a new code.');
-    return;
-  }
 
   const ownerId = lease.properties?.owner_id;
   let ownerProfile = null;
@@ -877,12 +755,7 @@ async function sendForSignature(leaseId) {
     previous_state: lease.status, new_state: 'Pending Signature',
   }]);
 
-  try {
-    await notifyLeaseEvent(leaseId, 'lease_signature_request', { otp, recipient_role: 'tenant' });
-  } catch (err) {
-    console.error('Signature request email failed:', err);
-    alert('Lease sent for signature, but the notification email failed. The tenant\'s code is ' + otp + ' — you may want to share it directly.');
-  }
+  await notifyLeaseEvent(leaseId, 'lease_signature_request', { otp, recipient_role: 'tenant' });
 
   alert('Signature request sent to the tenant.');
   await loadRegister();
@@ -890,16 +763,11 @@ async function sendForSignature(leaseId) {
 }
 
 async function triggerRenewalNotice(leaseId) {
-  try {
-    await notifyLeaseEvent(leaseId, 'lease_renewal_reminder');
-    alert('Renewal notice sent.');
-  } catch (err) {
-    console.error('Renewal notice email failed:', err);
-    alert('Could not send the renewal notice email: ' + err.message);
-  }
+  await notifyLeaseEvent(leaseId, 'lease_renewal_reminder');
   await supabaseClient.from('lease_audit_logs').insert([{
     lease_id: leaseId, user_id: currentUser.id, action_performed: 'Manual renewal notice triggered',
   }]);
+  alert('Renewal notice sent.');
 }
 
 /* ---------------- Audit trail modal ---------------- */
@@ -929,17 +797,14 @@ async function showAuditTrail(leaseId) {
 /* ---------------- Shared helpers ---------------- */
 async function notifyLeaseEvent(leaseId, eventType, extra = {}) {
   const { data: { session } } = await supabaseClient.auth.getSession();
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/dms-notifications`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
-    body: JSON.stringify({ lease_event: eventType, lease_id: leaseId, ...extra }),
-  });
-  // Same fix as lease-sign.js — fetch() doesn't reject on a 4xx/5xx
-  // response, so without this check a failed OTP issuance (e.g. when
-  // admin clicks "Send for Signature") was silently invisible.
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Could not process ${eventType}: ${res.status} ${body}`.slice(0, 300));
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/dms-notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ lease_event: eventType, lease_id: leaseId, ...extra }),
+    });
+  } catch (err) {
+    console.error('Lease notification failed:', err);
   }
 }
 
