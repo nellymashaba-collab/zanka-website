@@ -5,24 +5,6 @@ let currentProfile = null;
 let rentalBreakdownState = { view: 'month', period: '', propertyId: null };
 let rentalBreakdownChartInstance = null;
 
-// Retries a failing operation for transient-looking failures (5xx
-// gateway errors, network errors) — not for real errors like RLS
-// denials, which would just fail identically every retry anyway.
-async function retryTransient(fn, retries = 2) {
-  let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const isTransient = /5\d\d|Gateway|network|timeout/i.test(err.message || '');
-      if (!isTransient || attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-    }
-  }
-  throw lastErr;
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   currentProfile = await requireSession('tenant', 'tenant-login.html');
   if (!currentProfile) return;
@@ -34,7 +16,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await handleLogout('tenant-login.html');
   await loadTenantData(currentProfile.id);
   await loadLeaseInspections(currentProfile.id);
-  await loadPendingSignatures(currentProfile.id);
   wireMaintenanceForm(currentProfile.id);
   wireNoticeForm(currentProfile.id);
   wireDetailsForm(currentProfile);
@@ -51,20 +32,6 @@ async function loadTenantData(tenantId) {
     .order('start_date', { ascending: false });
   renderDocList('lease-list', leases, (l) => {
     const range = [l.start_date, l.end_date].filter(Boolean).join(' – ');
-    // Leases created through the wizard don't get a real file_url until
-    // they're fully signed and executed — no PDF is generated before
-    // that. Rendering a link to a null href resolves to ".../null" and
-    // 404s, so show the status instead until there's an actual file.
-    if (!l.file_url) {
-      return `
-        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-          <div>
-            <span class="text-navy font-medium block">${l.title || 'Lease Agreement'}</span>
-            ${range ? `<span class="text-xs text-gray-500">${range}</span>` : ''}
-          </div>
-          <span class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">${l.status || 'Draft'}</span>
-        </div>`;
-    }
     return `
       <a href="${l.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
         <div>
@@ -109,15 +76,27 @@ async function loadTenantData(tenantId) {
 
       invoicesList.querySelectorAll('[data-doc-download]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          try {
-            const { data } = await retryTransient(async () => {
-              const result = await supabaseClient.storage.from('documents').createSignedUrl(btn.dataset.docPath, 300);
-              if (result.error) throw new Error(result.error.message);
-              return result;
-            });
-            window.open(data.signedUrl, '_blank', 'noopener');
-          } catch (err) {
-            alert('Could not open file: ' + err.message);
+          // Mobile browsers (especially iOS Safari) only allow window.open()
+          // to succeed if it happens SYNCHRONOUSLY within the tap — once you
+          // await something first, the browser no longer treats it as a
+          // direct result of user interaction and silently blocks the popup
+          // (no error, nothing visibly happens). Fix: open a blank tab
+          // immediately, then point it at the real file once we have it.
+          const newTab = window.open('', '_blank', 'noopener');
+          const { data, error } = await supabaseClient
+            .storage.from('documents').createSignedUrl(btn.dataset.docPath, 300);
+          if (error) {
+            if (newTab) newTab.close();
+            alert('Could not open file: ' + error.message);
+            return;
+          }
+          if (newTab) {
+            newTab.location.href = data.signedUrl;
+          } else {
+            // Popup blocker still caught it even with the synchronous open
+            // (rare, but possible with strict settings) — fall back to
+            // navigating the current tab instead of failing silently.
+            window.location.href = data.signedUrl;
           }
         });
       });
@@ -352,74 +331,14 @@ async function loadLeaseInspections(tenantId) {
   }
 
   const typeLabels = { Move_In: 'Move-In', Routine: 'Routine', Move_Out: 'Move-Out' };
-  container.innerHTML = inspections.map(i => {
-    let badgeClass, badgeText;
-    if (i.tenant_signed_at) {
-      badgeClass = 'bg-green-100 text-green-700';
-      badgeText = 'Signed';
-    } else if (i.tenant_otp_code) {
-      // Admin has actually issued the OTP — there's really something
-      // to do right now.
-      badgeClass = 'bg-gold-light text-navy-deep';
-      badgeText = 'Needs your signature';
-    } else {
-      // Nothing to sign yet — showing the same urgent badge here was
-      // the actual bug: it told tenants to act on something admin
-      // hadn't made available yet.
-      badgeClass = 'bg-gray-100 text-gray-500';
-      badgeText = 'Awaiting request';
-    }
-    return `
-    <a href="inspection-history.html?id=${i.id}" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
+  container.innerHTML = inspections.map(i => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <div>
         <p class="font-semibold text-navy text-sm">${typeLabels[i.inspection_type] || i.inspection_type} &middot; ${i.properties?.address || '—'}</p>
         <p class="text-xs text-gray-500">${new Date(i.inspection_date).toLocaleDateString()}${i.overall_condition ? ' · ' + i.overall_condition : ''}</p>
       </div>
-      <span class="text-xs font-semibold px-3 py-1 rounded-full ${badgeClass}">${badgeText}</span>
-    </a>`;
-  }).join('');
-}
-
-// Shows any lease this tenant is a party to and hasn't signed yet.
-// RLS ("Signers can view their own signature row") already scopes this
-// to just their own rows. If otp_code is set, it's their turn — link
-// to the actual signing page. If not, they're a guarantor still
-// waiting on the tenant ahead of them in the sequence.
-async function loadPendingSignatures(tenantId) {
-  const { data: rawSignatures } = await supabaseClient
-    .from('lease_signatures')
-    .select('*, leases ( id, properties ( address ) )')
-    .eq('signed_by', tenantId)
-    .eq('otp_verified', false);
-
-  // Defensive de-dupe by lease_id — the underlying duplicate-row cause
-  // is now prevented at the source (sendForSignature checks first),
-  // but this keeps the dashboard honest even if an old duplicate is
-  // still sitting in the database from before that fix.
-  const seen = new Set();
-  const signatures = (rawSignatures || []).filter(s => !seen.has(s.lease_id) && seen.add(s.lease_id));
-
-  const container = document.getElementById('pending-signatures-list');
-  if (!container) return;
-
-  if (!signatures || signatures.length === 0) {
-    container.innerHTML = '';
-    document.getElementById('pending-signatures-card')?.classList.add('hidden');
-    return;
-  }
-
-  document.getElementById('pending-signatures-card')?.classList.remove('hidden');
-  container.innerHTML = signatures.map(s => `
-    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 gap-3">
-      <div>
-        <p class="font-semibold text-navy text-sm">${s.leases?.properties?.address || 'Lease #' + s.lease_id}</p>
-        <p class="text-xs text-gray-500">${s.party_type === 'Guarantor' ? 'Signing as guarantor' : 'Awaiting your signature'}</p>
-      </div>
-      ${s.otp_code
-        ? `<a href="lease-sign.html?lease=${s.lease_id}" class="btn btn-primary !py-2 text-sm">Review &amp; Sign</a>`
-        : `<span class="text-xs text-gray-400 italic">Waiting for your turn</span>`}
-    </div>
-  `).join('');
+      <span class="text-xs font-semibold px-3 py-1 rounded-full ${i.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${i.status}</span>
+    </div>`).join('');
 }
 
 function renderDocList(elementId, rows, template) {
