@@ -1,4 +1,4 @@
-// Zanka Group — Lease Management Module
+// Zanka Group — Lease Management Module 17h45
 // Requires supabase-client.js and auth.js loaded first.
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
