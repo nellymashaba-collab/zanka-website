@@ -213,6 +213,11 @@ async function advanceLeaseAfterSignature() {
     } catch (err) {
       console.error('Signed lease PDF generation failed (lease will still activate):', err);
     }
+    try {
+      await generateFirstRentalInvoice(signLeaseId);
+    } catch (err) {
+      console.error('First invoice generation failed (lease will still activate):', err);
+    }
     await notifyLeaseEvent('lease_fully_executed', { signed_lease_storage_path: signedLeaseStoragePath });
     return;
   }
@@ -586,5 +591,210 @@ function renderSignedLeasePdf(jsPDFCtor, blocks, signatures, meta) {
   });
 
   drawFooter();
+  return doc.output('blob');
+}
+
+/* ================================================================
+   FIRST RENTAL INVOICE — generated once the lease is fully signed.
+   1st month's rent, plus the deposit IF it was still unpaid at
+   signing (deposit_status !== 'Fully_Paid'). Reuses the same direct-
+   jsPDF drawing approach as the admin invoice generator (html2canvas
+   proved unreliable earlier this session — see that code's comments).
+   ================================================================ */
+
+async function generateFirstRentalInvoice(leaseId) {
+  const jsPDFCtor = window.jspdf?.jsPDF;
+  if (typeof jsPDFCtor !== 'function') throw new Error('PDF library failed to load.');
+
+  const { data: lease, error: leaseErr } = await supabaseClient
+    .from('leases').select('*').eq('id', leaseId).single();
+  if (leaseErr) throw leaseErr;
+
+  const { data: property } = await supabaseClient
+    .from('properties').select('address').eq('id', lease.property_id).single();
+  const { data: tenantProfile } = await supabaseClient
+    .from('profiles').select('full_name, phone').eq('id', lease.tenant_id).single();
+
+  const includeDeposit = lease.deposit_status !== 'Fully_Paid';
+  const netRental = Number(lease.monthly_rent) || 0;
+  const deposit = includeDeposit ? (Number(lease.deposit_required) || 0) : 0;
+  const totalDue = netRental + deposit;
+
+  const invoiceDate = new Date().toISOString().slice(0, 10);
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 7);
+  const dueDateStr = dueDate.toISOString().slice(0, 10);
+
+  // 1. Create the invoice row (trigger assigns invoice_number, same
+  // as the admin-generated recurring invoices).
+  const { data: invoice, error: invError } = await supabaseClient.from('tenant_invoices').insert([{
+    property_id: lease.property_id,
+    tenant_id: lease.tenant_id,
+    invoice_date: invoiceDate,
+    due_date: dueDateStr,
+    net_rental: netRental,
+    electricity: 0, water: 0, sewerage: 0, refuse: 0,
+    deposit: deposit,
+    total_due: totalDue,
+    status: 'Sent',
+    created_by: signCurrentUser.id, // whoever actually completes the signing sequence — often the Owner, not the Tenant
+  }]).select().single();
+  if (invError) throw invError;
+
+  try {
+    // 2. Render as PDF directly.
+    const pdfBlob = renderFirstInvoicePdf(jsPDFCtor, {
+      invoiceNumber: invoice.invoice_number,
+      invoiceDate, dueDate: dueDateStr,
+      tenantName: tenantProfile?.full_name || '',
+      propertyAddress: property?.address || '',
+      netRental, deposit, includeDeposit, totalDue,
+    });
+
+    // 3. Upload it.
+    const storagePath = `documents/tenant-invoices/${invoice.id}/${invoice.invoice_number}.pdf`;
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/documents/${storagePath}`, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`);
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY);
+      xhr.setRequestHeader('Content-Type', 'application/pdf');
+      xhr.setRequestHeader('x-upsert', 'true');
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('Invoice upload failed: ' + xhr.status));
+      xhr.onerror = () => reject(new Error('Network error uploading invoice.'));
+      xhr.send(pdfBlob);
+    });
+
+    await supabaseClient.from('tenant_invoices').update({ storage_path: storagePath }).eq('id', invoice.id);
+
+    // 4. documents row, so it shows in the tenant's Invoices card.
+    await supabaseClient.from('documents').insert([{
+      category: 'Rent/Utility Invoice',
+      property_id: lease.property_id,
+      tenant_id: lease.tenant_id,
+      statement_month: invoiceDate.slice(0, 7) + '-01',
+      document_date: invoiceDate,
+      due_date: dueDateStr,
+      original_filename: `${invoice.invoice_number}.pdf`,
+      generated_filename: `${invoice.invoice_number}.pdf`,
+      storage_path: storagePath,
+      subtotal: totalDue, discount: 0, vat: 0, total_amount: totalDue,
+      status: 'Approved',
+      uploaded_by: signCurrentUser.id,
+      operational_table: 'tenant_invoices',
+      operational_id: String(invoice.id),
+    }]);
+
+    // 5. The actual payable record — linked to this specific invoice
+    // (tenant_invoice_id), which is what "Pay Now" reads.
+    await supabaseClient.from('payments').insert([{
+      tenant_id: lease.tenant_id,
+      tenant_invoice_id: invoice.id,
+      amount: totalDue,
+      due_date: dueDateStr,
+      status: 'Pending',
+    }]);
+  } catch (innerErr) {
+    // Same rollback pattern as the admin invoice generator — don't
+    // leave an orphaned invoice with no matching document/payment.
+    await supabaseClient.from('tenant_invoices').delete().eq('id', invoice.id);
+    throw innerErr;
+  }
+
+  return invoice.id;
+}
+
+function renderFirstInvoicePdf(jsPDFCtor, d) {
+  const NAVY = [31, 42, 68];
+  const NAVY_DEEP = [20, 28, 48];
+  const GOLD = [200, 155, 60];
+  const GOLD_LIGHT = [228, 199, 122];
+  const fmtMoney = (n) => 'R ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  const contentW = pageW - margin * 2;
+
+  doc.setFillColor(...NAVY_DEEP);
+  doc.rect(0, 0, pageW, 92, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(16);
+  doc.text('ZANKA GROUP', margin, 42);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(20);
+  doc.text('FIRST INVOICE', pageW - margin, 42, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Ref: ' + d.invoiceNumber, pageW - margin, 56, { align: 'right' });
+  doc.setFillColor(...GOLD);
+  doc.rect(0, 92, pageW, 3, 'F');
+
+  let y = 128;
+  doc.setTextColor(...NAVY);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(13);
+  doc.text(d.tenantName, margin, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(75, 81, 99);
+  doc.text(d.propertyAddress, margin, y + 16);
+
+  doc.setTextColor(...NAVY);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(`Invoice Date: ${fmtDate(d.invoiceDate)}`, pageW - margin, y, { align: 'right' });
+  doc.text(`Due Date: ${fmtDate(d.dueDate)}`, pageW - margin, y + 14, { align: 'right' });
+
+  y += 50;
+  const rows = [['First Month\'s Rent', d.netRental]];
+  if (d.includeDeposit) rows.push(['Security Deposit (equivalent to 1 month\'s rent)', d.deposit]);
+
+  doc.setFillColor(...NAVY);
+  doc.rect(margin, y, contentW, 26, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('DESCRIPTION', margin + 10, y + 17);
+  doc.text('AMOUNT', pageW - margin - 10, y + 17, { align: 'right' });
+  y += 26;
+
+  rows.forEach((row, i) => {
+    if (i % 2 === 1) { doc.setFillColor(250, 250, 251); doc.rect(margin, y, contentW, 26, 'F'); }
+    doc.setTextColor(51, 56, 70);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.text(row[0], margin + 10, y + 17);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmtMoney(row[1]), pageW - margin - 10, y + 17, { align: 'right' });
+    doc.setDrawColor(236, 237, 241);
+    doc.line(margin, y + 26, margin + contentW, y + 26);
+    y += 26;
+  });
+
+  y += 20;
+  doc.setFillColor(...NAVY);
+  doc.roundedRect(pageW - margin - 220, y, 220, 44, 8, 8, 'F');
+  doc.setTextColor(185, 192, 207);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('TOTAL DUE', pageW - margin - 16, y + 17, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(18);
+  doc.text(fmtMoney(d.totalDue), pageW - margin - 16, y + 36, { align: 'right' });
+
+  if (d.includeDeposit) {
+    y += 70;
+    doc.setTextColor(110, 116, 130);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.text('This invoice includes your security deposit, which was outstanding at lease signing.', margin, y);
+  }
+
   return doc.output('blob');
 }
