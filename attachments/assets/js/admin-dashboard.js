@@ -773,9 +773,11 @@ async function loadApprovalGrid() {
 }
 
 async function previewDocument(path) {
+  // Same mobile popup-blocker fix — open synchronously, redirect after.
+  const newTab = window.open('', '_blank', 'noopener');
   const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(path, 300);
-  if (error) { alert('Could not open file: ' + error.message); return; }
-  window.open(data.signedUrl, '_blank', 'noopener');
+  if (error) { if (newTab) newTab.close(); alert('Could not open file: ' + error.message); return; }
+  if (newTab) { newTab.location.href = data.signedUrl; } else { window.location.href = data.signedUrl; }
 }
 
 async function approveDocument(docId, doc) {
