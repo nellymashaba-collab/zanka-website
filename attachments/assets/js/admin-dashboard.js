@@ -905,12 +905,16 @@ function applyDirectCategoryRules(category) {
   const requiredMark = document.getElementById('direct-tenant-required-mark');
   const financialWrap = document.getElementById('direct-financial-wrap');
   const financialSummary = document.getElementById('direct-financial-summary');
+  const leaseEndDateWrap = document.getElementById('direct-lease-end-date-wrap');
+  const leaseEndDateInput = document.getElementById('direct-lease-end-date');
 
   if (!config) {
     tenantSelect.required = false;
     requiredMark.textContent = '';
     financialWrap.classList.remove('hidden');
     financialSummary.classList.remove('hidden');
+    leaseEndDateWrap.classList.add('hidden');
+    leaseEndDateInput.required = false;
     return;
   }
 
@@ -920,6 +924,14 @@ function applyDirectCategoryRules(category) {
   const showFinancials = config.financialMode !== 'none';
   financialWrap.classList.toggle('hidden', !showFinancials);
   financialSummary.classList.toggle('hidden', !showFinancials);
+
+  // leases.end_date is a NOT NULL column, but nothing else on this form
+  // provides it — without this field, publishing a Lease here always
+  // fails with a database constraint error.
+  const isLease = category === 'Lease';
+  leaseEndDateWrap.classList.toggle('hidden', !isLease);
+  leaseEndDateInput.required = isLease;
+
   recalculateDirectTotals();
 }
 
@@ -1008,6 +1020,11 @@ async function handleDirectUploadSubmit(e) {
     const documentDate = document.getElementById('direct-document-date').value;
     if (!propertyId || !statementMonth || !documentDate) throw new Error('All fields are required.');
 
+    const leaseEndDate = document.getElementById('direct-lease-end-date').value || null;
+    if (category === 'Lease' && !leaseEndDate) {
+      throw new Error('Lease End Date is required — leases.end_date cannot be blank.');
+    }
+
     const extension = (directUploadFile.name.split('.').pop() || 'pdf').toLowerCase();
     const tenantLabel = document.getElementById('direct-tenant').selectedOptions[0]?.textContent || 'NA';
     const generatedFilename = buildGeneratedFilename({
@@ -1038,7 +1055,7 @@ async function handleDirectUploadSubmit(e) {
     if (config.publish) {
       const publishPayload = config.publish({
         category, property_id: propertyId, tenant_id: tenantId, owner_id: ownerId,
-        partner_id: null, document_date: documentDate, due_date: null,
+        partner_id: null, document_date: documentDate, due_date: leaseEndDate,
         total_amount: totalAmount, generated_filename: generatedFilename,
         signed_url: signedUrlData.signedUrl,
       });
