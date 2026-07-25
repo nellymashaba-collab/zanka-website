@@ -1,4 +1,4 @@
-// Zanka Group — Tenant dashboard
+// Zanka Group — Tenant dashboard 17h44
 // Requires supabase-client.js and auth.js loaded first.
 
 let currentProfile = null;
