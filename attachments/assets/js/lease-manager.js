@@ -1,4 +1,4 @@
-// Zanka Group — Lease Management Module 11h30
+// Zanka Group — Lease Management Module 16h05
 // Requires supabase-client.js and auth.js loaded first.
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
@@ -62,10 +62,29 @@ function collectEscalations() {
 
 async function populateWizardSelects() {
   const { data: properties } = await supabaseClient
-    .from('properties').select('id, address, owner_id, owner:owner_id ( full_name )').order('address');
+    .from('properties').select('id, address, owner_id, investor_entity_id, owner:owner_id ( full_name )').order('address');
+
+  // For entity-owned properties (owner_id null), resolve the display
+  // name via the same effective-owner logic used everywhere else,
+  // instead of showing "Unknown owner" — this dropdown only informs
+  // the admin who'll be signing, it doesn't itself create any
+  // signing records (sendForSignature does that, and already uses
+  // the proper RPC resolution).
+  const propsWithOwnerNames = await Promise.all((properties || []).map(async (p) => {
+    if (p.owner?.full_name) return { ...p, resolvedOwnerName: p.owner.full_name };
+    if (p.investor_entity_id) {
+      const { data: effectiveId } = await supabaseClient.rpc('get_effective_owner_id', { p_property_id: p.id });
+      if (effectiveId) {
+        const { data: rep } = await supabaseClient.from('profiles').select('full_name').eq('id', effectiveId).single();
+        return { ...p, resolvedOwnerName: rep?.full_name || 'Unknown owner' };
+      }
+    }
+    return { ...p, resolvedOwnerName: 'Unknown owner' };
+  }));
+
   const propSelect = document.getElementById('lw-property');
   propSelect.innerHTML = '<option value="">Select a property</option>' +
-    (properties || []).map(p => `<option value="${p.id}" data-owner-id="${p.owner_id}" data-owner-name="${p.owner?.full_name || 'Unknown owner'}">${p.address}</option>`).join('');
+    propsWithOwnerNames.map(p => `<option value="${p.id}" data-owner-id="${p.owner_id}" data-owner-name="${p.resolvedOwnerName}">${p.address}</option>`).join('');
 
   propSelect.addEventListener('change', () => {
     const ownerName = propSelect.selectedOptions[0]?.dataset.ownerName;
@@ -231,10 +250,13 @@ async function buildPreviewValues() {
     tenantPhone = tenantProfile?.phone || '';
   }
   let ownerEmail = '';
-  const ownerId = propertySelect.selectedOptions[0]?.dataset.ownerId;
-  if (ownerId) {
-    const { data: ownerProfile } = await supabaseClient.from('profiles').select('email').eq('id', ownerId).single();
-    ownerEmail = ownerProfile?.email || '';
+  const propertyId = propertySelect.value;
+  if (propertyId) {
+    const { data: effectiveOwnerId } = await supabaseClient.rpc('get_effective_owner_id', { p_property_id: propertyId });
+    if (effectiveOwnerId) {
+      const { data: ownerProfile } = await supabaseClient.from('profiles').select('email').eq('id', effectiveOwnerId).single();
+      ownerEmail = ownerProfile?.email || '';
+    }
   }
 
   const monthlyRental = 'R' + (parseFloat(document.getElementById('lw-monthly-rent').value) || 0).toLocaleString();
@@ -703,7 +725,14 @@ async function sendForSignature(leaseId) {
   if (!lease) { alert('Lease not found.'); return; }
   if (lease.fica_status !== 'Approved') { alert('FICA must be approved before sending for signature.'); return; }
 
-  const ownerId = lease.properties?.owner_id;
+  // This used to read lease.properties?.owner_id directly, which is
+  // always null for entity-owned properties by design (see the
+  // properties table's check constraint) — meaning NO Owner party
+  // was ever created for any entity-owned property's lease, silently,
+  // since the code just skipped the "if (ownerId)" block entirely.
+  // get_effective_owner_id() falls back to the entity's first-linked
+  // representative when owner_id is null.
+  const { data: ownerId } = await supabaseClient.rpc('get_effective_owner_id', { p_property_id: lease.property_id });
   let ownerProfile = null;
   if (ownerId) {
     const { data } = await supabaseClient.from('profiles').select('full_name, email').eq('id', ownerId).single();
@@ -719,6 +748,11 @@ async function sendForSignature(leaseId) {
   }
   if (ownerId) {
     partyRows.push({ lease_id: leaseId, party_type: 'Owner', user_id: ownerId, email: ownerProfile?.email, full_name: ownerProfile?.full_name });
+  } else {
+    // Genuinely no owner AND no entity rep resolvable — this is a
+    // real data problem (property has neither), not something to
+    // silently proceed past.
+    alert('Warning: no Owner or investor representative could be resolved for this property. The lease will be created without an Owner signing step — fix the property\'s owner_id or investor_entity_id/representative link first.');
   }
 
   const { data: parties, error: partiesError } = await supabaseClient.from('lease_parties').insert(partyRows).select();
