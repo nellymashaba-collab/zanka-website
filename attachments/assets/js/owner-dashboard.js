@@ -1,4 +1,4 @@
-// Zanka Group — Owner dashboard 12h50
+// Zanka Group — Owner dashboard 13h50
 // Requires supabase-client.js and auth.js loaded first.
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -133,12 +133,37 @@ async function loadOwnerData(ownerId) {
   await loadDocs('statements', 'statements-list', ownerId);
   await loadOwnerLeases(ownerId);
   await loadDocs('inspections', 'inspections-list', ownerId);
-  await loadDocs('contractor_invoices', 'invoices-list', ownerId);
+  await loadOwnerContractorInvoices(ownerId);
   await loadDocs('levy_statements', 'levies-list', ownerId);
   await loadLeaseInspections(ownerId);
 
   renderPerformanceChart(properties);
   wireRentalBreakdown((properties || []).map(p => p.id));
+}
+
+// "Contractor Invoices" previously queried contractor_invoices, a
+// table nothing in the current admin flow ever writes to — Maintenance
+// Invoice / Professional Fees Invoice uploads actually publish into
+// partner_invoices instead. Custom render here since that table's
+// shape (amount/status/partner_id) doesn't match the generic
+// title/file_url pattern loadDocs assumes.
+async function loadOwnerContractorInvoices(ownerId) {
+  const { data } = await supabaseClient
+    .from('partner_invoices').select('*')
+    .eq('owner_id', ownerId)
+    .order('created_at', { ascending: false });
+
+  renderList('invoices-list', data, (d) => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <div>
+        <span class="text-navy font-medium block">R${Number(d.amount || 0).toLocaleString()}</span>
+        <span class="text-xs text-gray-500">${d.status || ''}</span>
+      </div>
+      ${d.file_url
+        ? `<a href="${d.file_url}" target="_blank" rel="noopener" class="learn-more">Download →</a>`
+        : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
+    </div>
+  `);
 }
 
 // leases has no owner_id column at all — an owner only connects to a
