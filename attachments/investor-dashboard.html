@@ -4,178 +4,160 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Investor Portal | Zanka Group</title>
-<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Investor portal for Zanka Group investment entities.">
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
-          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+          colors: {
+            navy: '#1F2A44',
+            'navy-deep': '#141C30',
+            gold: '#C89B3C',
+            'gold-light': '#E4C77A',
+            offwhite: '#F4F4F4'
+          },
+          fontFamily: {
+            display: ['Playfair Display', 'Georgia', 'serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
         }
       }
     }
   </script>
+
 <link rel="stylesheet" href="assets/css/style.css">
+
 </head>
-<body class="bg-offwhite antialiased">
-<main id="main" class="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+<body class="bg-white antialiased">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between">
+    <a href="index.html" class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+      <span class="leading-none">
+        <span class="block font-display font-bold text-navy text-lg tracking-tight">ZANKA</span>
+        <span class="block text-[10px] tracking-[0.25em] text-gray-500 font-semibold">GROUP</span>
+      </span>
+    </a>
+    <div class="flex items-center gap-4">
+      <span class="hidden sm:block text-sm text-gray-500">Welcome, <span data-investor-name class="font-semibold text-navy"></span></span>
+      <button data-logout class="btn btn-outline-navy !py-2 !px-4 text-sm">Log Out</button>
+    </div>
+  </div>
+</header><main id="main">
 
-  <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
-    <div class="flex items-center gap-3">
-      <span class="w-11 h-11 rounded-md bg-gold text-navy-deep font-display font-bold text-xl flex items-center justify-center flex-shrink-0">Z</span>
-      <div>
-        <p class="eyebrow mb-0.5">Investor Portal</p>
-        <h1 class="font-display font-bold text-navy text-2xl sm:text-3xl">Portfolio Overview</h1>
+<section class="bg-offwhite py-10 md:py-14">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8">
+    <p class="eyebrow mb-2">Investor Portal</p>
+    <h1 class="font-display font-bold text-navy text-3xl sm:text-4xl mb-2">Your Investment Portfolio</h1>
+    <p id="entity-context-note" class="text-sm text-gray-500 mb-8"></p>
+
+    <!-- Entity switcher — only shown/populated if representing more than one entity -->
+    <div id="entity-switcher-wrap" class="hidden mb-8">
+      <label class="field-label" for="entity-switcher">Viewing entity</label>
+      <select id="entity-switcher" class="field max-w-sm"></select>
+    </div>
+
+    <!-- Top stats -->
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+      <div class="card p-6">
+        <div class="icon-badge mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><rect x="3" y="10" width="4" height="10"/><rect x="10" y="6" width="4" height="14"/><rect x="17" y="3" width="4" height="17"/></svg></div>
+        <p class="text-sm text-gray-500 mb-1">Total Portfolio Value</p>
+        <p id="stat-portfolio-value" class="font-display font-bold text-navy text-3xl">&mdash;</p>
+      </div>
+      <div class="card p-6">
+        <div class="icon-badge mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16M4 12a8 8 0 0 1 16 0M4 12a8 8 0 0 0 16 0"/></svg></div>
+        <p class="text-sm text-gray-500 mb-1">Outstanding Loan Balance</p>
+        <p id="stat-loan-outstanding" class="font-display font-bold text-navy text-3xl">&mdash;</p>
+      </div>
+      <div class="card p-6">
+        <div class="icon-badge mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></div>
+        <p class="text-sm text-gray-500 mb-1">Net Equity</p>
+        <p id="stat-equity" class="font-display font-bold text-navy text-3xl">&mdash;</p>
+      </div>
+      <div class="card p-6">
+        <div class="icon-badge mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5Z"/></svg></div>
+        <p class="text-sm text-gray-500 mb-1">Properties Held</p>
+        <p id="stat-property-count" class="font-display font-bold text-navy text-3xl">&mdash;</p>
       </div>
     </div>
-    <div class="flex items-center gap-3">
-      <div id="avatar-widget"></div>
-      <div class="text-right">
-        <p class="text-sm text-gray-500">Signed in as</p>
-        <p id="investor-name" class="font-semibold text-navy text-sm"></p>
-        <p id="investor-entities-display" class="text-xs text-gold"></p>
-      </div>
-      <a href="index.html" class="learn-more text-sm">Home</a>
-      <a id="back-to-owner-link" href="owner-dashboard.html" class="hidden learn-more text-sm">Owner Portal</a>
-      <button data-logout class="btn btn-outline-navy !py-2 text-sm">Log Out</button>
-    </div>
-  </div>
 
-  <!-- 1. KPIs -->
-  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Monthly Rental Income</p>
-      <p id="kpi-monthly-income" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Annualised: <span id="kpi-annualised-income">&mdash;</span></p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Occupancy Rate</p>
-      <p id="kpi-occupancy" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Vacancy: <span id="kpi-vacancy">&mdash;</span></p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Rent Collection Rate</p>
-      <p id="kpi-collection-rate" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Rental Arrears</p>
-      <p id="kpi-arrears" class="font-display font-bold text-red-600 text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Outstanding balances: <span id="kpi-outstanding-balances">&mdash;</span></p>
-    </div>
-  </div>
-
-  <!-- Equity / Returns / Yields -->
-  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Portfolio Equity</p>
-      <p id="kpi-equity" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p id="kpi-equity-note" class="text-xs text-gray-400 mt-1"></p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Total Return</p>
-      <p id="kpi-total-return" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Rent collected + appreciation</p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Gross Yield</p>
-      <p id="kpi-gross-yield" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Annualised income ÷ purchase price</p>
-    </div>
-    <div class="card p-5">
-      <p class="text-xs text-gray-500 mb-1">Net Yield</p>
-      <p id="kpi-net-yield" class="font-display font-bold text-navy text-2xl">&mdash;</p>
-      <p class="text-xs text-gray-400 mt-1">Rent collected (YTD) ÷ purchase price</p>
-    </div>
-  </div>
-
-  <!-- Portfolio overview + property type allocation -->
-  <div class="grid lg:grid-cols-3 gap-6 mb-8">
-    <div class="card p-6">
-      <h2 class="font-display font-semibold text-navy text-lg mb-4">Portfolio Overview</h2>
-      <div class="space-y-3 text-sm">
-        <div class="flex justify-between"><span class="text-gray-500">Total Properties</span><span id="ov-total-properties" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Occupied</span><span id="ov-occupied" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Vacant</span><span id="ov-vacant" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Active Leases</span><span id="ov-active-leases" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between border-t border-gray-100 pt-3"><span class="text-gray-500">Portfolio Purchase Price</span><span id="ov-purchase-price" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Portfolio Market Value</span><span id="ov-market-value" class="font-semibold text-navy">—</span></div>
+    <!-- Properties table -->
+    <div class="card p-6 mb-10">
+      <h2 class="font-display font-semibold text-navy text-lg mb-4">Properties</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+              <th class="py-2.5 pr-4">Address</th>
+              <th class="py-2.5 pr-4">Type</th>
+              <th class="py-2.5 pr-4">Market Value</th>
+              <th class="py-2.5 pr-4">Loan Outstanding</th>
+              <th class="py-2.5 pr-4">Equity</th>
+              <th class="py-2.5 pr-4">Rental Income</th>
+            </tr>
+          </thead>
+          <tbody id="investor-properties-tbody"></tbody>
+        </table>
       </div>
     </div>
-    <div class="card p-6 lg:col-span-2">
-      <h2 class="font-display font-semibold text-navy text-lg mb-4">Property Type Allocation</h2>
-      <div class="grid sm:grid-cols-2 gap-6 items-center">
-        <canvas id="type-allocation-chart" height="200"></canvas>
-        <div id="type-allocation-list" class="space-y-2 text-sm"></div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-10">
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-3">Lease Documents</h2>
+        <div id="investor-leases-list"></div>
+      </div>
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-3">Rent/Utility Invoices</h2>
+        <div id="investor-invoices-list"></div>
       </div>
     </div>
-  </div>
 
-  <!-- Trends -->
-  <div class="grid lg:grid-cols-2 gap-6 mb-8">
-    <div class="card p-6">
-      <h2 class="font-display font-semibold text-navy text-lg mb-4">Rental Income Trend <span class="text-xs text-gray-400 font-normal">(last 12 months)</span></h2>
-      <canvas id="income-trend-chart" height="180"></canvas>
-    </div>
-    <div class="card p-6">
-      <h2 class="font-display font-semibold text-navy text-lg mb-4">Collection Trend <span class="text-xs text-gray-400 font-normal">(due vs. collected)</span></h2>
-      <canvas id="collection-trend-chart" height="180"></canvas>
-    </div>
-  </div>
-
-  <!-- Lease & occupancy management -->
-  <div class="grid lg:grid-cols-2 gap-6 mb-8">
-    <div class="card p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="font-display font-semibold text-navy text-lg">Upcoming Lease Renewals</h2>
-        <select id="renewal-timeframe" class="field !w-auto !py-1.5 text-sm">
-          <option value="30">Next 30 days</option>
-          <option value="60" selected>Next 60 days</option>
-          <option value="90">Next 90 days</option>
-        </select>
+    <div class="grid lg:grid-cols-2 gap-6 mb-10">
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-3">Inspection Reports</h2>
+        <div id="investor-inspections-list"></div>
       </div>
-      <div id="renewals-list"></div>
-    </div>
-    <div class="card p-6">
-      <h2 class="font-display font-semibold text-navy text-lg mb-4">Lease Metrics</h2>
-      <div class="space-y-3 text-sm mb-5">
-        <div class="flex justify-between"><span class="text-gray-500">Average Lease Length</span><span id="metric-avg-lease-length" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Tenant Retention Rate</span><span id="metric-retention-rate" class="font-semibold text-navy">—</span></div>
-        <div class="flex justify-between"><span class="text-gray-500">Average Days Vacant</span><span class="text-gray-400 italic text-xs">Not tracked yet</span></div>
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-3">Maintenance Requests</h2>
+        <div id="investor-maintenance-list"></div>
       </div>
-      <h3 class="font-semibold text-navy text-sm mb-2">Rental Escalations Due</h3>
-      <div id="escalations-list"></div>
     </div>
-  </div>
 
-  <!-- Property-level equity table -->
-  <div class="card p-6">
-    <h2 class="font-display font-semibold text-navy text-lg mb-1">Equity by Property</h2>
-    <p class="text-sm text-gray-500 mb-4">Equity = Current Market Value − Bond Outstanding. Properties without a market value set yet show as "Not yet valued" rather than an inaccurate R0.</p>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left">
-        <thead>
-          <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
-            <th class="py-2 px-3 font-semibold">Property</th>
-            <th class="py-2 px-3 font-semibold">Purchase Price</th>
-            <th class="py-2 px-3 font-semibold">Market Value</th>
-            <th class="py-2 px-3 font-semibold">Bond Outstanding</th>
-            <th class="py-2 px-3 font-semibold">Equity</th>
-          </tr>
-        </thead>
-        <tbody id="equity-table-tbody"></tbody>
-      </table>
+    <div class="card p-6 mb-10">
+      <h2 class="font-display font-semibold text-navy text-lg mb-3">Representatives</h2>
+      <p class="text-sm text-gray-500 mb-3">People authorized to view this entity's portfolio on Zanka Group's platform.</p>
+      <div id="entity-representatives-list"></div>
     </div>
+
+    <div id="back-to-owner-wrap" class="hidden mt-8">
+      <a href="owner-dashboard.html" class="btn btn-outline-navy">← Back to Owner Portal</a>
+    </div>
+
   </div>
+</section>
 
 </main>
+<footer class="bg-navy-deep text-gray-400 py-10">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8">
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+      <p>&copy; <span data-year></span> Zanka Group (Pty) Ltd. All rights reserved.</p>
+      <div class="flex gap-5">
+        <a href="privacy.html" class="hover:text-gold transition">Privacy Policy</a>
+        <a href="terms.html" class="hover:text-gold transition">Terms of Service</a>
+        <a href="popia.html" class="hover:text-gold transition">POPIA Notice</a>
+      </div>
+    </div>
+  </div>
+</footer>
+<script src="assets/js/main.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
 <script src="assets/js/supabase-client.js"></script>
 <script src="assets/js/auth.js"></script>
-<script src="assets/js/avatar-upload.js"></script>
 <script src="assets/js/investor-dashboard.js"></script>
 
 </body>
