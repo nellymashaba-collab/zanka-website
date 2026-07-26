@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 11h30
+// Zanka Group — Admin Dashboard 11h42
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -2088,6 +2088,11 @@ function wireCreateProfileForm() {
       full_name: document.getElementById('new-profile-name').value.trim(),
       email: document.getElementById('new-profile-email').value.trim(),
       role,
+      id_number: document.getElementById('new-profile-id-number').value.trim() || null,
+      phone: document.getElementById('new-profile-phone').value.trim() || null,
+      address_line1: document.getElementById('new-profile-address1').value.trim() || null,
+      address_line2: document.getElementById('new-profile-address2').value.trim() || null,
+      address_line3: document.getElementById('new-profile-address3').value.trim() || null,
     }]);
 
     if (error) {
