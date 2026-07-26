@@ -1,4 +1,4 @@
-// Zanka Group — Tenant dashboard 20h35
+// Zanka Group — Tenant dashboard 11h29
 // Requires supabase-client.js and auth.js loaded first.
 
 let currentProfile = null;
@@ -134,7 +134,7 @@ async function loadTenantData(tenantId) {
           // direct result of user interaction and silently blocks the popup
           // (no error, nothing visibly happens). Fix: open a blank tab
           // immediately, then point it at the real file once we have it.
-          const newTab = window.open('', '_blank', 'noopener');
+          const newTab = window.open('', '_blank');
           const { data, error } = await supabaseClient
             .storage.from('documents').createSignedUrl(btn.dataset.docPath, 300);
           if (error) {
