@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 16h10
+// Zanka Group — Admin Dashboard 16h44
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -209,6 +209,31 @@ async function loadGlobalPayments() {
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+// Resolves the effective owner id for a batch of properties at once
+// (personal owner_id if set, otherwise the entity's first-linked
+// representative — same logic as get_effective_owner_id() in the
+// database). Returns a Map of property_id -> ownerId ('' if none
+// resolvable). Needed because template-literal-embedding a raw JS
+// null into an HTML attribute (data-owner-id="${p.owner_id}") produces
+// the literal STRING "null", not an actual empty value — that string
+// is truthy in JS (breaking "|| null" fallbacks) and gets rejected by
+// Postgres as an invalid uuid if sent through unchanged. This was the
+// actual cause of "invalid input syntax for type uuid: null" errors
+// on entity-owned properties across several forms.
+async function resolveEffectiveOwnerIds(properties) {
+  const map = new Map();
+  await Promise.all((properties || []).map(async (p) => {
+    if (p.owner_id) { map.set(p.id, p.owner_id); return; }
+    if (p.investor_entity_id) {
+      const { data } = await supabaseClient.rpc('get_effective_owner_id', { p_property_id: p.id });
+      map.set(p.id, data || '');
+      return;
+    }
+    map.set(p.id, '');
+  }));
+  return map;
 }
 
 /* ================================================================
@@ -462,13 +487,14 @@ async function populateRentalSelects() {
   // tenant getting billed twice through two different flows.
   const { data: properties } = await supabaseClient
     .from('properties')
-    .select('id, address, owner_id')
+    .select('id, address, owner_id, investor_entity_id')
     .neq('package_tier', '10%')
     .order('address');
+  const ownerIdMap = await resolveEffectiveOwnerIds(properties);
   const propSelect = document.getElementById('rental-property');
   if (!propSelect) return;
   propSelect.innerHTML = '<option value="">Select a property</option>' +
-    (properties || []).map(p => `<option value="${p.id}" data-owner-id="${p.owner_id}">${p.address}</option>`).join('');
+    (properties || []).map(p => `<option value="${p.id}" data-owner-id="${ownerIdMap.get(p.id) || ''}">${p.address}</option>`).join('');
 
   const tenantSelect = document.getElementById('rental-tenant');
   tenantSelect.innerHTML = '<option value="">Select a property first</option>';
@@ -884,11 +910,12 @@ function wireRejectModal() {
 let directUploadFile = null;
 
 async function populateDirectSelects() {
-  const { data: properties } = await supabaseClient.from('properties').select('id, address, owner_id').order('address');
+  const { data: properties } = await supabaseClient.from('properties').select('id, address, owner_id, investor_entity_id').order('address');
+  const ownerIdMap = await resolveEffectiveOwnerIds(properties);
   const propSelect = document.getElementById('direct-property');
   if (!propSelect) return;
   propSelect.innerHTML = '<option value="">Select a property</option>' +
-    (properties || []).map(p => `<option value="${p.id}" data-owner-id="${p.owner_id}">${p.address}</option>`).join('');
+    (properties || []).map(p => `<option value="${p.id}" data-owner-id="${ownerIdMap.get(p.id) || ''}">${p.address}</option>`).join('');
 
   const tenantSelect = document.getElementById('direct-tenant');
   tenantSelect.innerHTML = '<option value="">Select a property first</option>';
@@ -1126,7 +1153,7 @@ async function populateInvoiceGenerateSelects() {
 
   const { data: properties } = await supabaseClient
     .from('properties')
-    .select('id, address, owner_id')
+    .select('id, address, owner_id, investor_entity_id')
     .eq('package_tier', '10%')
     .order('address');
 
@@ -1138,9 +1165,10 @@ async function populateInvoiceGenerateSelects() {
     return;
   }
 
+  const ownerIdMap = await resolveEffectiveOwnerIds(properties);
   emptyNote.classList.add('hidden');
   propSelect.innerHTML = '<option value="">Select a property</option>' +
-    properties.map(p => `<option value="${p.id}" data-owner-id="${p.owner_id}">${p.address}</option>`).join('');
+    properties.map(p => `<option value="${p.id}" data-owner-id="${ownerIdMap.get(p.id) || ''}">${p.address}</option>`).join('');
 
   const tenantSelect = document.getElementById('invoice-tenant');
   propSelect.addEventListener('change', () => populateInvoiceTenants(propSelect.value, tenantSelect));
