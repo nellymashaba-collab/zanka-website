@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard
+// Zanka Group — Admin Dashboard 11h30
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -774,7 +774,7 @@ async function loadApprovalGrid() {
 
 async function previewDocument(path) {
   // Same mobile popup-blocker fix — open synchronously, redirect after.
-  const newTab = window.open('', '_blank', 'noopener');
+  const newTab = window.open('', '_blank');
   const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(path, 300);
   if (error) { if (newTab) newTab.close(); alert('Could not open file: ' + error.message); return; }
   if (newTab) { newTab.location.href = data.signedUrl; } else { window.location.href = data.signedUrl; }
