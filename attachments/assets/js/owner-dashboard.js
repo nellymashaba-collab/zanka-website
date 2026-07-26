@@ -1,4 +1,4 @@
-// Zanka Group — Owner dashboard 10h16
+// Zanka Group — Owner dashboard 12h50
 // Requires supabase-client.js and auth.js loaded first.
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -11,8 +11,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await handleLogout('owner-login.html');
   await checkPendingLeaseSignature(profile.id);
+  await checkInvestorAccess(profile.id);
   await loadOwnerData(profile.id);
 });
+
+// Some owners also represent one or more investor entities (e.g. an
+// owner who personally owns one property, but also represents Zanka
+// Group, which owns others). This banner is how they reach that
+// separate view — no separate investor login needed, same session.
+async function checkInvestorAccess(profileId) {
+  const { data: reps } = await supabaseClient
+    .from('investor_representatives')
+    .select('entity_id, investor_entities:entity_id ( entity_name )')
+    .eq('profile_id', profileId);
+
+  if (!reps || reps.length === 0) return;
+
+  const main = document.getElementById('main');
+  if (!main) return;
+
+  const entityNames = reps.map(r => r.investor_entities?.entity_name).filter(Boolean).join(', ');
+  const banner = document.createElement('div');
+  banner.className = 'max-w-7xl mx-auto px-5 sm:px-8 pt-6';
+  banner.innerHTML = `
+    <div class="bg-navy/5 border border-navy/20 rounded-xl p-5 mb-4 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <p class="font-semibold text-navy">You also represent: ${entityNames}</p>
+        <p class="text-sm text-gray-600">View those properties and their investment details in the Investor Portal.</p>
+      </div>
+      <a href="investor-dashboard.html" class="btn btn-primary">Go to Investor Portal →</a>
+    </div>`;
+  main.prepend(banner);
+}
 
 // Same gap fix as the tenant portal — see tenant-dashboard.js for the
 // full explanation. Owners sign too in this system's design (Tenant,
