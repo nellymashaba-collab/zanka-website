@@ -1,4 +1,4 @@
-// Zanka Group — Investor dashboard 12h40
+// Zanka Group — Investor dashboard 13h15
 // Requires supabase-client.js and auth.js loaded first.
 //
 // No separate investor login exists by design — this is reached from
@@ -146,17 +146,292 @@ async function loadEntityPortfolio(entityId) {
   const totalValue = rows.reduce((s, p) => s + Number(p.current_market_value || 0), 0);
   const totalLoan = rows.reduce((s, p) => s + (p.outstanding || 0), 0);
   const totalEquity = totalValue - totalLoan;
+  const totalPurchasePrice = rows.reduce((s, p) => s + Number(p.cost_price || 0), 0);
 
   setText('stat-portfolio-value', 'R' + totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 }));
   setText('stat-loan-outstanding', 'R' + totalLoan.toLocaleString(undefined, { maximumFractionDigits: 0 }));
   setText('stat-equity', 'R' + totalEquity.toLocaleString(undefined, { maximumFractionDigits: 0 }));
   setText('stat-property-count', String(rows.length));
+  setText('stat-purchase-price', 'R' + totalPurchasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+
+  // Portfolio & Asset Overview
+  const occupied = rows.filter(p => p.occupancy_status === 'Occupied').length;
+  const vacant = rows.length - occupied;
+  setText('stat-occ-vacant', `${occupied} / ${vacant}`);
+  setText('stat-occupancy-rate', rows.length > 0 ? ((occupied / rows.length) * 100).toFixed(1) + '%' : '—');
+  setText('stat-vacancy-rate', rows.length > 0 ? ((vacant / rows.length) * 100).toFixed(1) + '%' : '—');
+  renderPropertyTypeAllocation(rows, totalValue);
+
+  const propertyIds = rows.map(p => p.id);
+
+  // Active leases + tenant list (needed by several metrics below)
+  const { data: activeLeases } = propertyIds.length > 0
+    ? await supabaseClient.from('leases').select('*').in('property_id', propertyIds).in('status', ['Active', 'Active_Month_to_Month'])
+    : { data: [] };
+
+  const monthlyIncome = (activeLeases || []).reduce((s, l) => s + Number(l.monthly_rent || 0), 0);
+  const annualisedIncome = monthlyIncome * 12;
+  setText('stat-monthly-income', 'R' + monthlyIncome.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+  setText('stat-annualised-income', 'R' + annualisedIncome.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+  setText('stat-active-leases', String((activeLeases || []).length));
+
+  const grossYield = totalPurchasePrice > 0 ? (annualisedIncome / totalPurchasePrice) * 100 : null;
+  setText('stat-gross-yield', grossYield != null ? grossYield.toFixed(2) + '%' : '—');
+
+  const tenantIds = [...new Set((activeLeases || []).map(l => l.tenant_id).filter(Boolean))];
+  const ytdPaid = await loadPaymentBasedMetrics(tenantIds, totalPurchasePrice);
+
+  // Total Return = YTD net rental collected + capital appreciation
+  // (current market value vs purchase price, summed across properties
+  // that have both values recorded).
+  const appreciation = rows.reduce((s, p) => {
+    if (p.current_market_value && p.cost_price) return s + (Number(p.current_market_value) - Number(p.cost_price));
+    return s;
+  }, 0);
+  setText('stat-total-return', 'R' + (ytdPaid + appreciation).toLocaleString(undefined, { maximumFractionDigits: 0 }));
 
   await loadRepresentatives(entityId);
   await loadEntityLeases(entityId);
   await loadEntityInvoices(entityId);
   await loadEntityInspections(entityId);
   await loadEntityMaintenance(entityId);
+  await loadIncomeTrendChart(propertyIds);
+  await loadCollectionTrendChart(tenantIds);
+  await loadUpcomingRenewals(propertyIds, document.getElementById('renewal-window')?.value || 90);
+  await loadLeaseMetrics(propertyIds);
+  await loadEscalationsDue(propertyIds);
+
+  document.getElementById('renewal-window')?.addEventListener('change', (e) => {
+    loadUpcomingRenewals(propertyIds, e.target.value);
+  });
+}
+
+// Payments has no property_id column directly — scoped via the
+// tenant_ids of this entity's ACTIVE leases instead (the most
+// reliable link available in the current schema).
+async function loadPaymentBasedMetrics(tenantIds, purchasePrice) {
+  if (tenantIds.length === 0) {
+    setText('stat-collection-rate', '—');
+    setText('stat-arrears', 'R0');
+    setText('stat-outstanding-balances', 'R0');
+    setText('stat-net-yield', '—');
+    return 0;
+  }
+
+  const yearStart = `${new Date().getFullYear()}-01-01`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: ytdPayments } = await supabaseClient
+    .from('payments').select('amount, status, due_date, paid_at')
+    .in('tenant_id', tenantIds)
+    .gte('due_date', yearStart);
+
+  const ytdDue = (ytdPayments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  const ytdPaid = (ytdPayments || []).filter(p => p.status === 'Paid').reduce((s, p) => s + Number(p.amount || 0), 0);
+  const collectionRate = ytdDue > 0 ? (ytdPaid / ytdDue) * 100 : null;
+  setText('stat-collection-rate', collectionRate != null ? collectionRate.toFixed(1) + '%' : '—');
+
+  const { data: allPending } = await supabaseClient
+    .from('payments').select('amount, due_date').in('tenant_id', tenantIds).eq('status', 'Pending');
+  const outstandingTotal = (allPending || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  const arrearsTotal = (allPending || []).filter(p => p.due_date && p.due_date < today).reduce((s, p) => s + Number(p.amount || 0), 0);
+  setText('stat-arrears', 'R' + arrearsTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+  setText('stat-outstanding-balances', 'R' + outstandingTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+
+  const netYield = purchasePrice > 0 ? (ytdPaid / purchasePrice) * 100 : null;
+  setText('stat-net-yield', netYield != null ? netYield.toFixed(2) + '%' : '—');
+
+  return ytdPaid;
+}
+
+function renderPropertyTypeAllocation(rows, totalValue) {
+  const container = document.getElementById('property-type-allocation');
+  if (!container) return;
+  if (rows.length === 0) { container.innerHTML = '<p class="text-gray-400">No properties yet.</p>'; return; }
+
+  const byType = {};
+  rows.forEach(p => {
+    const type = p.property_type || 'Unspecified';
+    byType[type] = (byType[type] || 0) + Number(p.current_market_value || 0);
+  });
+
+  container.innerHTML = Object.entries(byType).map(([type, value]) => {
+    const pct = totalValue > 0 ? (value / totalValue) * 100 : 0;
+    return `
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-navy">${type}</span>
+        <span class="text-gray-500">R${value.toLocaleString(undefined, { maximumFractionDigits: 0 })} (${pct.toFixed(0)}%)</span>
+      </div>`;
+  }).join('');
+}
+
+async function loadIncomeTrendChart(propertyIds) {
+  const canvas = document.getElementById('income-trend-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (window.__incomeTrendChart) window.__incomeTrendChart.destroy();
+
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ label: d.toLocaleDateString('en-ZA', { month: 'short', year: '2-digit' }), start: d, end: new Date(d.getFullYear(), d.getMonth() + 1, 1) });
+  }
+
+  let invoices = [];
+  if (propertyIds.length > 0) {
+    const { data } = await supabaseClient
+      .from('rental_invoices').select('invoice_date, net_rental')
+      .in('property_id', propertyIds)
+      .gte('invoice_date', months[0].start.toISOString().slice(0, 10));
+    invoices = data || [];
+  }
+
+  const totals = months.map(m => invoices
+    .filter(inv => { const d = new Date(inv.invoice_date); return d >= m.start && d < m.end; })
+    .reduce((s, inv) => s + Number(inv.net_rental || 0), 0));
+
+  window.__incomeTrendChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: months.map(m => m.label), datasets: [{ label: 'Rental Income Billed', data: totals, borderColor: '#C89B3C', backgroundColor: 'rgba(200,155,60,0.1)', fill: true, tension: 0.3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (v) => 'R' + v.toLocaleString() } } } },
+  });
+}
+
+async function loadCollectionTrendChart(tenantIds) {
+  const canvas = document.getElementById('collection-trend-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (window.__collectionTrendChart) window.__collectionTrendChart.destroy();
+
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ label: d.toLocaleDateString('en-ZA', { month: 'short', year: '2-digit' }), start: d, end: new Date(d.getFullYear(), d.getMonth() + 1, 1) });
+  }
+
+  let payments = [];
+  if (tenantIds.length > 0) {
+    const { data } = await supabaseClient
+      .from('payments').select('amount, status, due_date, paid_at')
+      .in('tenant_id', tenantIds)
+      .gte('due_date', months[0].start.toISOString().slice(0, 10));
+    payments = data || [];
+  }
+
+  const due = months.map(m => payments
+    .filter(p => { const d = new Date(p.due_date); return d >= m.start && d < m.end; })
+    .reduce((s, p) => s + Number(p.amount || 0), 0));
+  const collected = months.map(m => payments
+    .filter(p => p.status === 'Paid' && p.paid_at && (() => { const d = new Date(p.paid_at); return d >= m.start && d < m.end; })())
+    .reduce((s, p) => s + Number(p.amount || 0), 0));
+
+  window.__collectionTrendChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'Due', data: due, borderColor: '#1F2A44', backgroundColor: 'transparent', tension: 0.3 },
+        { label: 'Collected', data: collected, borderColor: '#C89B3C', backgroundColor: 'transparent', tension: 0.3 },
+      ],
+    },
+    options: { scales: { y: { ticks: { callback: (v) => 'R' + v.toLocaleString() } } } },
+  });
+}
+
+async function loadUpcomingRenewals(propertyIds, days) {
+  const container = document.getElementById('upcoming-renewals-list');
+  if (!container) return;
+  if (propertyIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No properties yet.</p>'; return; }
+
+  const today = new Date();
+  const windowEnd = new Date(today.getTime() + Number(days) * 24 * 60 * 60 * 1000);
+
+  const { data: leases } = await supabaseClient
+    .from('leases').select('*, properties:property_id ( address )')
+    .in('property_id', propertyIds)
+    .eq('status', 'Active')
+    .gte('end_date', today.toISOString().slice(0, 10))
+    .lte('end_date', windowEnd.toISOString().slice(0, 10))
+    .order('end_date');
+
+  if (!leases || leases.length === 0) {
+    container.innerHTML = `<p class="text-sm text-gray-400">No leases expiring in the next ${days} days.</p>`;
+    return;
+  }
+
+  container.innerHTML = leases.map(l => `
+    <div class="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0 text-sm">
+      <span class="text-navy font-medium">${l.properties?.address || 'Property'}</span>
+      <span class="text-gray-500">${new Date(l.end_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+    </div>
+  `).join('');
+}
+
+async function loadLeaseMetrics(propertyIds) {
+  if (propertyIds.length === 0) {
+    setText('stat-avg-lease-length', '—');
+    setText('stat-retention-rate', '—');
+    return;
+  }
+
+  const { data: leases } = await supabaseClient
+    .from('leases').select('start_date, end_date, renewal_status')
+    .in('property_id', propertyIds);
+
+  const withDates = (leases || []).filter(l => l.start_date && l.end_date);
+  if (withDates.length > 0) {
+    const avgDays = withDates.reduce((s, l) => s + (new Date(l.end_date) - new Date(l.start_date)) / 86400000, 0) / withDates.length;
+    setText('stat-avg-lease-length', (avgDays / 30.44).toFixed(1) + ' months');
+  } else {
+    setText('stat-avg-lease-length', '—');
+  }
+
+  // renewal_status isn't populated on any lease yet in this system —
+  // showing "Not enough data yet" rather than a fabricated 0%/rate,
+  // per the explicit design principle of not presenting unverified
+  // placeholder data. This will start working the moment real
+  // renewal decisions get recorded.
+  const tracked = (leases || []).filter(l => l.renewal_status);
+  if (tracked.length === 0) {
+    setText('stat-retention-rate', 'Not enough data yet');
+  } else {
+    const renewed = tracked.filter(l => /renew/i.test(l.renewal_status)).length;
+    setText('stat-retention-rate', ((renewed / tracked.length) * 100).toFixed(0) + '%');
+  }
+}
+
+async function loadEscalationsDue(propertyIds) {
+  const container = document.getElementById('escalations-due-list');
+  if (!container) return;
+  if (propertyIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No properties yet.</p>'; return; }
+
+  const { data: leases } = await supabaseClient.from('leases').select('id, property_id, properties:property_id ( address )').in('property_id', propertyIds);
+  const leaseIds = (leases || []).map(l => l.id);
+  const addressByLease = Object.fromEntries((leases || []).map(l => [l.id, l.properties?.address]));
+
+  if (leaseIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No escalations due.</p>'; return; }
+
+  const { data: escalations } = await supabaseClient
+    .from('lease_escalations').select('*')
+    .in('lease_id', leaseIds)
+    .eq('applied', false)
+    .gte('effective_date', new Date().toISOString().slice(0, 10))
+    .order('effective_date');
+
+  if (!escalations || escalations.length === 0) {
+    container.innerHTML = '<p class="text-sm text-gray-400">No escalations due.</p>';
+    return;
+  }
+
+  container.innerHTML = escalations.map(e => `
+    <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 text-sm">
+      <div>
+        <span class="text-navy font-medium block">${addressByLease[e.lease_id] || 'Property'}</span>
+        <span class="text-xs text-gray-500">${new Date(e.effective_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}${e.percentage ? ` · +${e.percentage}%` : ''}</span>
+      </div>
+      <span class="text-gray-600">R${Number(e.new_rental_amount || 0).toLocaleString()}</span>
+    </div>
+  `).join('');
 }
 
 // Every one of these is scoped by property_id membership within the
@@ -290,7 +565,7 @@ function renderPropertiesTable(rows) {
   if (!tbody) return;
 
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-sm text-gray-400 text-center">No properties held by this entity yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-sm text-gray-400 text-center">No properties held by this entity yet.</td></tr>`;
     return;
   }
 
@@ -298,6 +573,7 @@ function renderPropertiesTable(rows) {
     <tr class="border-b border-gray-50 text-sm">
       <td class="py-3 pr-4 font-medium text-navy">${p.address || 'Unknown address'}</td>
       <td class="py-3 pr-4 text-gray-600">${p.property_type || '—'}</td>
+      <td class="py-3 pr-4 text-gray-600">${p.cost_price ? 'R' + Number(p.cost_price).toLocaleString() : '—'}</td>
       <td class="py-3 pr-4 text-gray-600">R${Number(p.current_market_value || 0).toLocaleString()}</td>
       <td class="py-3 pr-4 text-gray-600">${p.outstanding != null ? 'R' + p.outstanding.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</td>
       <td class="py-3 pr-4 font-semibold text-navy">R${p.equity.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
