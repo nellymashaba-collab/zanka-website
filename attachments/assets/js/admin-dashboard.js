@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 11h42
+// Zanka Group — Admin Dashboard 13h49
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -358,6 +358,7 @@ const CATEGORY_CONFIG = {
       table: 'statements',
       row: {
         owner_id: doc.owner_id,
+        property_id: doc.property_id,
         title: doc.generated_filename,
         file_url: doc.signed_url,
       },
