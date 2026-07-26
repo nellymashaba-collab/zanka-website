@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 13h49
+// Zanka Group — Admin Dashboard 16h10
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -1898,6 +1898,7 @@ function wireAssignEntityPropertyForm() {
     const loanStart = document.getElementById('entity-loan-start').value;
 
     const { error } = await supabaseClient.from('properties').update({
+      owner_id: null, // clearing this is required — a property can't have BOTH a personal owner_id AND an investor_entity_id (see the check constraint), so assigning to an entity must explicitly clear personal ownership, not just add the entity link on top of it
       investor_entity_id: document.getElementById('entity-property-entity').value,
       property_type: document.getElementById('entity-property-type').value,
       current_market_value: marketValue ? parseFloat(marketValue) : null,
