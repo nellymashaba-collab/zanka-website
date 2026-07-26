@@ -1,4 +1,4 @@
-// Zanka Group — Lease electronic signing page 21h52
+// Zanka Group — Lease electronic signing page 9h55
 // Requires supabase-client.js and auth.js loaded first.
 // Reached via ?lease=<lease_id> from the emailed signature request.
 
@@ -207,7 +207,7 @@ async function advanceLeaseAfterSignature() {
   // a Guarantor row created, so the sequence naturally skips it.
   const order = ['Tenant', 'Guarantor', 'Owner'];
   const byType = {};
-  (allSignatures || []).forEach(s => { byType[s.party_type] = s; });
+  (allSignatures || []).forEach(s => { byType[s.party_type || s.lease_parties?.party_type] = s; });
 
   const sequence = order.filter(type => byType[type]);
   const doneUpToIndex = sequence.findIndex(type => !byType[type].otp_verified);
