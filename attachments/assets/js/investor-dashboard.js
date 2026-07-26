@@ -1,4 +1,4 @@
-// Zanka Group — Investor dashboard 13h15
+// Zanka Group — Investor dashboard 13h51
 // Requires supabase-client.js and auth.js loaded first.
 //
 // No separate investor login exists by design — this is reached from
@@ -195,6 +195,9 @@ async function loadEntityPortfolio(entityId) {
   await loadEntityInvoices(entityId);
   await loadEntityInspections(entityId);
   await loadEntityMaintenance(entityId);
+  await loadEntityStatements(entityId);
+  await loadEntityContractorInvoices(entityId);
+  await loadEntityLevyStatements(entityId);
   await loadIncomeTrendChart(propertyIds);
   await loadCollectionTrendChart(tenantIds);
   await loadUpcomingRenewals(propertyIds, document.getElementById('renewal-window')?.value || 90);
@@ -556,6 +559,79 @@ async function loadEntityMaintenance(entityId) {
       <span class="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${r.status === 'Completed' ? 'bg-green-100 text-green-700' : r.status === 'In Progress' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
         ${r.status}
       </span>
+    </div>
+  `).join('');
+}
+
+async function loadEntityStatements(entityId) {
+  const { data: props } = await supabaseClient.from('properties').select('id').eq('investor_entity_id', entityId);
+  const propertyIds = (props || []).map(p => p.id);
+  const container = document.getElementById('investor-statements-list');
+  if (!container) return;
+  if (propertyIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No properties yet.</p>'; return; }
+
+  const { data } = await supabaseClient
+    .from('statements').select('*')
+    .in('property_id', propertyIds)
+    .order('created_at', { ascending: false });
+
+  if (!data || data.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No statements yet.</p>'; return; }
+
+  container.innerHTML = data.map(d => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <span class="text-navy font-medium">${d.title || 'Statement'}</span>
+      ${d.file_url ? `<a href="${d.file_url}" target="_blank" rel="noopener" class="learn-more">Download →</a>` : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
+    </div>
+  `).join('');
+}
+
+// Contractor Invoices actually live in partner_invoices — see
+// owner-dashboard.js's loadOwnerContractorInvoices for the full
+// explanation (contractor_invoices itself is never written to by the
+// current admin flow).
+async function loadEntityContractorInvoices(entityId) {
+  const { data: props } = await supabaseClient.from('properties').select('id').eq('investor_entity_id', entityId);
+  const propertyIds = (props || []).map(p => p.id);
+  const container = document.getElementById('investor-contractor-invoices-list');
+  if (!container) return;
+  if (propertyIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No properties yet.</p>'; return; }
+
+  const { data } = await supabaseClient
+    .from('partner_invoices').select('*')
+    .in('property_id', propertyIds)
+    .order('created_at', { ascending: false });
+
+  if (!data || data.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No contractor invoices yet.</p>'; return; }
+
+  container.innerHTML = data.map(d => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <div>
+        <span class="text-navy font-medium block">R${Number(d.amount || 0).toLocaleString()}</span>
+        <span class="text-xs text-gray-500">${d.status || ''}</span>
+      </div>
+      ${d.file_url ? `<a href="${d.file_url}" target="_blank" rel="noopener" class="learn-more">Download →</a>` : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
+    </div>
+  `).join('');
+}
+
+async function loadEntityLevyStatements(entityId) {
+  const { data: props } = await supabaseClient.from('properties').select('id').eq('investor_entity_id', entityId);
+  const propertyIds = (props || []).map(p => p.id);
+  const container = document.getElementById('investor-levies-list');
+  if (!container) return;
+  if (propertyIds.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No properties yet.</p>'; return; }
+
+  const { data } = await supabaseClient
+    .from('levy_statements').select('*')
+    .in('property_id', propertyIds)
+    .order('created_at', { ascending: false });
+
+  if (!data || data.length === 0) { container.innerHTML = '<p class="text-sm text-gray-400">No levy statements yet.</p>'; return; }
+
+  container.innerHTML = data.map(d => `
+    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <span class="text-navy font-medium">${d.title || 'Levy Statement'}</span>
+      ${d.file_url ? `<a href="${d.file_url}" target="_blank" rel="noopener" class="learn-more">Download →</a>` : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
     </div>
   `).join('');
 }
