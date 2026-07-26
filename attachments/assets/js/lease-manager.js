@@ -1,4 +1,4 @@
-// Zanka Group — Lease Management Module 20h08
+// Zanka Group — Lease Management Module 11h30
 // Requires supabase-client.js and auth.js loaded first.
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
@@ -483,7 +483,7 @@ async function viewFicaDocument(leaseId) {
   // window.open() must happen synchronously within the click to work
   // reliably on mobile browsers, so open a blank tab first and redirect
   // it once we actually have the signed URL.
-  const newTab = window.open('', '_blank', 'noopener');
+  const newTab = window.open('', '_blank');
   const { data: doc } = await supabaseClient.from('lease_documents').select('storage_path').eq('lease_id', leaseId).eq('category', 'Tenant_FICA').single();
   if (!doc) { if (newTab) newTab.close(); alert('No FICA document found for this lease.'); return; }
   const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(doc.storage_path, 300);
