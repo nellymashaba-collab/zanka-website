@@ -653,6 +653,33 @@
               </select>
             </div>
           </div>
+          <div class="border-t border-gray-100 pt-4 mt-2">
+            <p class="text-xs text-gray-500 mb-3">Optional, but required to appear correctly on a signed lease (fills the ID Number / Address / Cellphone fields in the lease document) — mainly matters for Tenant and Owner profiles.</p>
+            <div class="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label class="field-label" for="new-profile-id-number">ID Number</label>
+                <input class="field" type="text" id="new-profile-id-number" placeholder="e.g. 9201060887085">
+              </div>
+              <div>
+                <label class="field-label" for="new-profile-phone">Cellphone Number</label>
+                <input class="field" type="tel" id="new-profile-phone" placeholder="e.g. 074 824 8812">
+              </div>
+            </div>
+            <div class="mt-4">
+              <label class="field-label" for="new-profile-address1">Address Line 1</label>
+              <input class="field" type="text" id="new-profile-address1" placeholder="e.g. 17 Tiati Road">
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label class="field-label" for="new-profile-address2">Address Line 2</label>
+                <input class="field" type="text" id="new-profile-address2" placeholder="e.g. Sunninghill Gardens">
+              </div>
+              <div>
+                <label class="field-label" for="new-profile-address3">Address Line 3</label>
+                <input class="field" type="text" id="new-profile-address3" placeholder="e.g. Sandton, 2191">
+              </div>
+            </div>
+          </div>
           <button type="submit" class="btn btn-primary w-full">Create Profile</button>
         </form>
         <p id="create-profile-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
