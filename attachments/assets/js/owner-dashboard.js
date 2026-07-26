@@ -1,4 +1,4 @@
-// Zanka Group — Owner dashboard 20h35
+// Zanka Group — Owner dashboard 10h16
 // Requires supabase-client.js and auth.js loaded first.
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -101,7 +101,7 @@ async function loadOwnerData(ownerId) {
   // all stored as file rows with a URL. loadDocs fetches every matching row
   // (no .single()/.maybeSingle()), so leases naturally return full history.
   await loadDocs('statements', 'statements-list', ownerId);
-  await loadDocs('leases', 'leases-list', ownerId, 'owner_id');
+  await loadOwnerLeases(ownerId);
   await loadDocs('inspections', 'inspections-list', ownerId);
   await loadDocs('contractor_invoices', 'invoices-list', ownerId);
   await loadDocs('levy_statements', 'levies-list', ownerId);
@@ -109,6 +109,37 @@ async function loadOwnerData(ownerId) {
 
   renderPerformanceChart(properties);
   wireRentalBreakdown((properties || []).map(p => p.id));
+}
+
+// leases has no owner_id column at all — an owner only connects to a
+// lease indirectly via properties.owner_id -> leases.property_id
+// (confirmed by the actual RLS policy: "Owners can view leases for
+// their properties" joins through properties, not a direct column).
+// The generic loadDocs('leases', ..., 'owner_id') call this replaced
+// was filtering on a column that doesn't exist, silently returning
+// nothing — this is why the Owner's Lease Documents card never showed
+// anything even after file_url was correctly populated.
+async function loadOwnerLeases(ownerId) {
+  const { data } = await supabaseClient
+    .from('leases')
+    .select('*, properties!inner ( owner_id, address )')
+    .eq('properties.owner_id', ownerId)
+    .order('created_at', { ascending: false });
+
+  renderList('leases-list', data, (d) => {
+    if (!d.file_url) {
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 -mx-2 px-2">
+          <span class="text-navy font-medium">${d.properties?.address || 'Lease'}</span>
+          <span class="text-xs text-gray-400 italic">No document attached</span>
+        </div>`;
+    }
+    return `
+      <a href="${d.file_url}" target="_blank" rel="noopener" class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded">
+        <span class="text-navy font-medium">${d.properties?.address || 'Lease'}</span>
+        <span class="learn-more">Download →</span>
+      </a>`;
+  });
 }
 
 // The new, richer inspection records (lease_inspections), distinct
