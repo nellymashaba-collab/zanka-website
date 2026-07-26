@@ -177,7 +177,53 @@
 
 <script src="assets/js/supabase-client.js"></script>
 <script src="assets/js/auth.js"></script>
-<script>handleLogin('owner', 'owner-dashboard.html');</script>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('auth-error');
+  const submitBtn = document.getElementById('login-submit');
+  errorEl.classList.add('hidden');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Logging in…';
+
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    errorEl.textContent = error.message;
+    errorEl.classList.remove('hidden');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Log in';
+    return;
+  }
+
+  // This page used to always send everyone to owner-dashboard.html,
+  // which then bounces anyone whose profiles.role isn't literally
+  // 'owner' via requireSession — meaning a person who's ONLY an
+  // investor representative (no personal property, no owner role)
+  // had no way to log in at all, even though investor-dashboard.html
+  // itself never required an 'owner' role. Check properly instead.
+  const { data: profile } = await supabaseClient.from('profiles').select('role').eq('id', data.user.id).single();
+
+  if (profile?.role === 'owner') {
+    window.location.href = 'owner-dashboard.html';
+    return;
+  }
+
+  const { data: reps } = await supabaseClient.from('investor_representatives').select('id').eq('profile_id', data.user.id).limit(1);
+  if (reps && reps.length > 0) {
+    window.location.href = 'investor-dashboard.html';
+    return;
+  }
+
+  await supabaseClient.auth.signOut();
+  errorEl.textContent = "This account isn't set up as an Owner or Investor. Please use the correct portal, or contact Zanka Group.";
+  errorEl.classList.remove('hidden');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Log in';
+});
+</script>
 
 </body>
 </html>
