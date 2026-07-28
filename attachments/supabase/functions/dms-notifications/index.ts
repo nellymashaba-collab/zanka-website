@@ -11,6 +11,7 @@
 // never in a user's browser, so the key never leaves a trusted environment.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -34,6 +35,85 @@ const CORS_HEADERS = {
 };
 
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+// WhatsApp via Twilio — optional. Every call here is wrapped so that
+// if these secrets aren't set yet (Twilio/template approval is a
+// multi-day external process, not something code alone can finish),
+// email notifications keep working unaffected. Nothing throws if
+// WhatsApp isn't configured; it just silently skips.
+const TWILIO_ACCOUNT_SID = Deno.env.get('TWILIO_ACCOUNT_SID');
+const TWILIO_AUTH_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN');
+const TWILIO_WHATSAPP_FROM = Deno.env.get('TWILIO_WHATSAPP_FROM'); // format: whatsapp:+27...
+const TWILIO_TEMPLATE_OTP = Deno.env.get('TWILIO_TEMPLATE_OTP');
+const TWILIO_TEMPLATE_FICA = Deno.env.get('TWILIO_TEMPLATE_FICA');
+const TWILIO_TEMPLATE_EXECUTED = Deno.env.get('TWILIO_TEMPLATE_EXECUTED');
+const TWILIO_TEMPLATE_PAYMENT = Deno.env.get('TWILIO_TEMPLATE_PAYMENT');
+const TWILIO_TEMPLATE_MAINTENANCE_QUEUED = Deno.env.get('TWILIO_TEMPLATE_MAINTENANCE_QUEUED');
+const TWILIO_TEMPLATE_MAINTENANCE_COMPLETE = Deno.env.get('TWILIO_TEMPLATE_MAINTENANCE_COMPLETE');
+const TWILIO_TEMPLATE_STATEMENT = Deno.env.get('TWILIO_TEMPLATE_STATEMENT');
+const TWILIO_TEMPLATE_NEW_DOCUMENT = Deno.env.get('TWILIO_TEMPLATE_NEW_DOCUMENT');
+
+// Normalizes a South African number in whatever format it was
+// entered (074 824 8812, 0748248812, +27748248812, etc.) into the
+// E.164 format WhatsApp/Twilio requires (+27748248812).
+function formatPhoneForWhatsApp(phone) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('27')) return `whatsapp:+${digits}`;
+  if (digits.startsWith('0')) return `whatsapp:+27${digits.slice(1)}`;
+  if (digits.length === 9) return `whatsapp:+27${digits}`; // no leading 0 at all
+  return null; // unrecognisable format — skip rather than guess wrong
+}
+
+async function sendWhatsAppTemplate(phone, contentSid, variables) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_FROM || !contentSid) {
+    return { skipped: true, reason: 'WhatsApp not configured yet' };
+  }
+  const to = formatPhoneForWhatsApp(phone);
+  if (!to) return { skipped: true, reason: 'No usable phone number' };
+
+  const body = new URLSearchParams({
+    From: TWILIO_WHATSAPP_FROM,
+    To: to,
+    ContentSid: contentSid,
+    ContentVariables: JSON.stringify(variables),
+  });
+
+  try {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('WhatsApp send failed:', errText);
+      return { ok: false, error: errText };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error('WhatsApp send error:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+// Resolves who actually counts as "the Owner" for a property —
+// either the personal owner_id, or (for entity-owned properties,
+// where owner_id is null by design — see the properties table's
+// check constraint) the entity's first-linked representative.
+// Mirrors get_effective_owner_id() in the database. Needed because
+// making owner_id nullable for entity-owned properties would
+// otherwise silently break every "notify/sign as Owner" code path
+// below, all of which used to assume properties.owner_id was always
+// a real person.
+async function resolveEffectiveOwnerId(propertyId) {
+  if (!propertyId) return null;
+  const { data } = await supabaseAdmin.rpc('get_effective_owner_id', { p_property_id: propertyId });
+  return data || null;
+}
 
 // Shared by both the document-approval flow and the lease-event flow
 // below — sends every queued email via Resend and returns the Response.
@@ -64,6 +144,168 @@ async function sendEmails(emailsToSend) {
   return new Response(JSON.stringify({ sent: results }), { status: anyFailed ? 207 : 200, headers: CORS_HEADERS });
 }
 
+// Turns the merged template HTML into a flat list of {type, text}
+// blocks for direct PDF drawing. Deno's Edge runtime has no
+// DOMParser (unlike a browser), so this uses a targeted regex
+// instead — safe here specifically because content_html is always
+// built by THIS codebase from a known, predictable set of tags
+// (h2/h3/p), not arbitrary external HTML.
+function htmlToBlocks(html) {
+  const blocks = [];
+  const stripTags = (s) => s
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '—').replace(/&#39;/g, "'")
+    .trim();
+  const tagRegex = /<(h2|h3|p)[^>]*>([\s\S]*?)<\/\1>/gi;
+  let match;
+  while ((match = tagRegex.exec(html)) !== null) {
+    const tag = match[1].toLowerCase();
+    const text = stripTags(match[2]);
+    if (!text) continue;
+    blocks.push({ type: tag === 'h2' ? 'title' : tag === 'h3' ? 'heading' : 'paragraph', text });
+  }
+  return blocks;
+}
+
+// Draws the full executed lease directly as a PDF — Zanka-branded
+// header on every page, wrapped/paginated body text, additional
+// clauses section, and a signatures page built from real evidence
+// (name, timestamp, IP). Mirrors the same direct-drawing approach
+// used for tenant invoices (html2canvas proved unreliable there —
+// see that code's comments — direct drawing has no such issues).
+async function renderExecutedLeasePdf(blocks, clauseBlocks, signatures, meta) {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const titleFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+
+  const NAVY = rgb(31 / 255, 42 / 255, 68 / 255);
+  const NAVY_DEEP = rgb(20 / 255, 28 / 255, 48 / 255);
+  const GOLD = rgb(200 / 255, 155 / 255, 60 / 255);
+  const INK = rgb(32 / 255, 36 / 255, 46 / 255);
+  const GRAY = rgb(110 / 255, 116 / 255, 130 / 255);
+  const BORDER = rgb(0.86, 0.87, 0.89);
+  const WHITE = rgb(1, 1, 1);
+
+  const pageW = 595.28, pageH = 841.89; // A4 in points
+  const margin = 54;
+  const contentW = pageW - margin * 2;
+  const bottomLimit = 70;
+
+  let page = pdfDoc.addPage([pageW, pageH]);
+  let y = pageH - margin;
+  let pageNum = 1;
+
+  const drawHeader = (p) => {
+    p.drawRectangle({ x: 0, y: pageH - 46, width: pageW, height: 46, color: NAVY_DEEP });
+    p.drawText('ZANKA GROUP', { x: margin, y: pageH - 30, size: 13, font: titleFont, color: WHITE });
+    const label = 'EXECUTED LEASE AGREEMENT';
+    const w = boldFont.widthOfTextAtSize(label, 8);
+    p.drawText(label, { x: pageW - margin - w, y: pageH - 30, size: 8, font: boldFont, color: GOLD });
+  };
+
+  const drawFooter = (p, num) => {
+    p.drawText(`Zanka Group (Pty) Ltd · ${meta.address || ''}`, { x: margin, y: 30, size: 7.5, font, color: GRAY });
+    const pageLabel = `Page ${num}`;
+    const w = font.widthOfTextAtSize(pageLabel, 7.5);
+    p.drawText(pageLabel, { x: pageW - margin - w, y: 30, size: 7.5, font, color: GRAY });
+  };
+
+  const newPage = () => {
+    drawFooter(page, pageNum);
+    page = pdfDoc.addPage([pageW, pageH]);
+    pageNum += 1;
+    drawHeader(page);
+    y = pageH - 46 - 40;
+  };
+
+  const ensureSpace = (needed) => { if (y - needed < bottomLimit) newPage(); };
+
+  const wrapText = (text, useFont, size) => {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word;
+      if (useFont.widthOfTextAtSize(test, size) > contentW && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  };
+
+  drawHeader(page);
+  y = pageH - 46 - 40;
+
+  page.drawText('LEASE AGREEMENT - RESIDENTIAL', { x: margin, y, size: 16, font: titleFont, color: NAVY });
+  y -= 22;
+  page.drawText('FULLY SIGNED — ACTIVE', { x: margin, y, size: 9, font: boldFont, color: GOLD });
+  y -= 26;
+
+  blocks.forEach((block) => {
+    if (block.type === 'title') return; // already drew the main title above
+    if (block.type === 'heading') {
+      ensureSpace(30);
+      y -= 6;
+      wrapText(block.text.toUpperCase(), boldFont, 11.5).forEach((line) => {
+        ensureSpace(16);
+        page.drawText(line, { x: margin, y, size: 11.5, font: boldFont, color: NAVY });
+        y -= 16;
+      });
+      y -= 4;
+    } else {
+      wrapText(block.text, font, 9.5).forEach((line) => {
+        ensureSpace(13);
+        page.drawText(line, { x: margin, y, size: 9.5, font, color: INK });
+        y -= 13;
+      });
+      y -= 8;
+    }
+  });
+
+  if (clauseBlocks.length > 0) {
+    ensureSpace(30);
+    y -= 10;
+    page.drawText('ADDITIONAL TERMS', { x: margin, y, size: 12, font: titleFont, color: NAVY });
+    y -= 22;
+    clauseBlocks.forEach((c) => {
+      ensureSpace(18);
+      page.drawText(c.title, { x: margin, y, size: 9.5, font: boldFont, color: GOLD });
+      y -= 14;
+      wrapText(c.text, font, 9.5).forEach((line) => {
+        ensureSpace(13);
+        page.drawText(line, { x: margin, y, size: 9.5, font, color: INK });
+        y -= 13;
+      });
+      y -= 10;
+    });
+  }
+
+  // Signatures page — real evidence, own page for clarity.
+  newPage();
+  page.drawText('SIGNATURES', { x: margin, y, size: 14, font: titleFont, color: NAVY });
+  y -= 30;
+
+  signatures.forEach((s) => {
+    ensureSpace(70);
+    page.drawLine({ start: { x: margin, y }, end: { x: pageW - margin, y }, thickness: 0.5, color: BORDER });
+    y -= 18;
+    page.drawText(`${s.name} (${s.role})`, { x: margin, y, size: 10.5, font: boldFont, color: NAVY });
+    y -= 16;
+    page.drawText(`Signed electronically: ${s.signedAt}`, { x: margin, y, size: 9, font, color: INK });
+    y -= 14;
+    page.drawText(`IP Address: ${s.ip}`, { x: margin, y, size: 8, font, color: GRAY });
+    y -= 20;
+  });
+
+  drawFooter(page, pageNum);
+  return await pdfDoc.save();
+}
+
 // Assembles the final executed lease: merged template + enabled
 // clauses + a signature block built from the actual verified
 // lease_signatures/lease_parties records (name, role, date — the
@@ -71,19 +313,23 @@ async function sendEmails(emailsToSend) {
 // text). Uploads to the existing private 'documents' bucket and
 // returns a long-lived signed URL, same pattern used for tenant
 // invoices elsewhere in this build.
+//
+// Rewritten to produce a real PDF (pdf-lib) instead of an HTML
+// string — the HTML version was showing as raw source code rather
+// than rendering across devices/apps, the exact problem already
+// solved for tenant invoices earlier this session by switching to
+// direct PDF generation instead of relying on HTML rendering.
 async function generateAndStoreExecutedLease(leaseId, lease, signatures) {
   const { data: template } = lease.template_id
     ? await supabaseAdmin.from('lease_templates').select('content_html').eq('id', lease.template_id).single()
     : { data: null };
 
-  let clausesHtml = '';
+  let clauseBlocks = [];
   if (lease.enabled_clause_ids && lease.enabled_clause_ids.length > 0) {
     const { data: clauses } = await supabaseAdmin
       .from('lease_clauses').select('clause_title, clause_text, display_order')
       .in('id', lease.enabled_clause_ids).order('display_order');
-    clausesHtml = (clauses || [])
-      .map(c => `<div style="margin-bottom:14px;"><p style="font-weight:700;margin:0 0 4px 0;">${c.clause_title}</p><p style="margin:0;">${c.clause_text}</p></div>`)
-      .join('');
+    clauseBlocks = (clauses || []).map(c => ({ title: c.clause_title, text: c.clause_text }));
   }
 
   const mergeValues = {
@@ -95,14 +341,16 @@ async function generateAndStoreExecutedLease(leaseId, lease, signatures) {
     StartDate: lease.start_date, EndDate: lease.end_date,
     LeaseStartDate: lease.start_date, LeaseEndDate: lease.end_date,
   };
-  if (lease.properties?.owner_id) {
-    const { data: owner } = await supabaseAdmin.from('profiles').select('full_name').eq('id', lease.properties.owner_id).single();
+  const effectiveOwnerId1 = await resolveEffectiveOwnerId(lease.property_id);
+  if (effectiveOwnerId1) {
+    const { data: owner } = await supabaseAdmin.from('profiles').select('full_name').eq('id', effectiveOwnerId1).single();
     mergeValues.OwnerName = owner?.full_name || '';
   }
 
   const mergedTemplate = (template?.content_html || '<p>No template content.</p>').replace(
     /\{\{(\w+)\}\}/g, (m, key) => (key in mergeValues ? String(mergeValues[key]) : m)
   );
+  const blocks = htmlToBlocks(mergedTemplate);
 
   // Real signature evidence — pulled fresh with party names, not
   // reused from the caller's plain lease_signatures rows.
@@ -112,38 +360,20 @@ async function generateAndStoreExecutedLease(leaseId, lease, signatures) {
     .eq('lease_id', leaseId)
     .order('signed_at');
 
-  const signatureBlockHtml = (sigDetails || []).map(s => `
-    <div style="border-top:1px solid #ECEDF1; padding-top:12px; margin-top:12px;">
-      <p style="margin:0; font-weight:700;">${s.lease_parties?.full_name || s.party_type} <span style="font-weight:400; color:#8A90A0;">(${s.party_type})</span></p>
-      <p style="margin:2px 0 0 0; font-size:12px; color:#8A90A0;">Signed electronically ${s.signed_at ? new Date(s.signed_at).toLocaleString() : ''}${s.ip_address ? ' · IP ' + s.ip_address : ''}</p>
-    </div>
-  `).join('');
+  const signatureData = (sigDetails || []).map(s => ({
+    name: s.lease_parties?.full_name || s.party_type,
+    role: s.party_type,
+    signedAt: s.signed_at ? new Date(s.signed_at).toLocaleString() : 'Not recorded',
+    ip: s.ip_address || 'Not recorded',
+  }));
 
-  const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Executed Lease — ${lease.properties?.address || ''}</title>
-<style>
-  body{ font-family: Georgia, serif; max-width:800px; margin:40px auto; padding:0 24px; color:#20242E; line-height:1.6; }
-  .header{ background:#141C30; color:#fff; padding:24px; border-radius:8px; margin-bottom:24px; }
-  .header p{ margin:0; }
-  .badge{ display:inline-block; background:#C89B3C; color:#141C30; font-weight:700; font-size:12px; padding:4px 10px; border-radius:999px; margin-top:8px; }
-</style></head>
-<body>
-  <div class="header">
-    <p style="font-size:11px; letter-spacing:0.2em; color:#C89B3C; text-transform:uppercase;">Zanka Group</p>
-    <p style="font-size:22px; font-weight:700;">Executed Lease Agreement</p>
-    <span class="badge">FULLY SIGNED — ACTIVE</span>
-  </div>
-  <div>${mergedTemplate}</div>
-  <hr style="border:none; border-top:1px solid #ECEDF1; margin:24px 0;">
-  <div>${clausesHtml}</div>
-  <h3 style="margin-top:32px;">Signatures</h3>
-  ${signatureBlockHtml}
-  <p style="font-size:11px; color:#9AA0AE; margin-top:32px;">Zanka Group (Pty) Ltd · Sandton, Johannesburg, South Africa · zankagroup.co.za</p>
-</body></html>`;
+  const pdfBytes = await renderExecutedLeasePdf(blocks, clauseBlocks, signatureData, {
+    address: lease.properties?.address || '',
+  });
 
-  const path = `documents/lease-files/${leaseId}/executed-lease.html`;
+  const path = `documents/lease-files/${leaseId}/executed-lease.pdf`;
   const { error: uploadError } = await supabaseAdmin.storage.from('documents')
-    .upload(path, new Blob([html], { type: 'text/html' }), { upsert: true, contentType: 'text/html' });
+    .upload(path, new Blob([pdfBytes], { type: 'application/pdf' }), { upsert: true, contentType: 'application/pdf' });
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
 
   const { data: signedUrlData, error: signError } = await supabaseAdmin.storage
@@ -170,8 +400,8 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
     .select(`
       *,
       properties ( address, owner_id ),
-      tenant:tenant_id ( full_name, email ),
-      guarantor:guarantor_id ( full_name, email )
+      tenant:tenant_id ( full_name, email, phone ),
+      guarantor:guarantor_id ( full_name, email, phone )
     `)
     .eq('id', leaseId)
     .single();
@@ -193,6 +423,12 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
         `,
       });
     }
+    if (lease.tenant?.phone) {
+      await sendWhatsAppTemplate(lease.tenant.phone, TWILIO_TEMPLATE_FICA, {
+        '1': lease.tenant.full_name || 'there',
+        '2': lease.properties?.address || 'your property',
+      });
+    }
   }
 
   else if (eventType === 'lease_signature_request') {
@@ -200,21 +436,23 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
     let party = null;
     if (role === 'guarantor') party = lease.guarantor;
     else if (role === 'tenant') party = lease.tenant;
-    else if (role === 'owner' && lease.properties?.owner_id) {
-      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', lease.properties.owner_id).single();
-      party = owner;
+    else if (role === 'owner') {
+      const effectiveOwnerId = await resolveEffectiveOwnerId(lease.property_id);
+      if (effectiveOwnerId) {
+        const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name, phone').eq('id', effectiveOwnerId).single();
+        party = owner;
+      }
     }
 
     let otp = payload.otp;
 
-    // Issuing the next party's OTP happens here, server-side, at the
-    // moment the previous signer's signature completes — this is the
-    // sequential trigger (Tenant -> Guarantor -> Owner). This write now
-    // happens UNCONDITIONALLY, before any email-address check — it
-    // used to happen after, which meant a missing email silently
-    // blocked the entire signing sequence, not just the notification.
-    // The OTP in the database is the real source of truth regardless
-    // of whether an email can be sent for it.
+    // Still generate/store an OTP for Owner too — even though they
+    // never have to type it in (lease-sign.js skips that step for
+    // them client-side), this value is also the signal the
+    // owner-dashboard.js banner check uses to detect "it's genuinely
+    // your turn now" (otp_code being set). Removing generation
+    // entirely broke that detection — the banner could never appear
+    // for Owner since nothing ever set otp_code anymore.
     if (role !== 'tenant' && payload.issue_otp_for_signature_id) {
       otp = String(Math.floor(100000 + Math.random() * 900000));
       const expires = new Date();
@@ -226,24 +464,35 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       if (otpError) throw new Error(`Could not issue OTP: ${otpError.message}`);
     }
 
-    // Email is now best-effort — no email on file skips just the
-    // notification, not the OTP that was already saved above.
-    if (!party?.email) {
-      return await sendEmails(emailsToSend); // emailsToSend is empty here — returns { skipped: true }
+    // Email and WhatsApp are both best-effort and independent — a
+    // missing email no longer skips WhatsApp (and vice versa), unlike
+    // the previous version which returned early on !party?.email,
+    // silently skipping WhatsApp too even when a phone number existed.
+    const roleLabel = role === 'guarantor' ? 'signature as guarantor' : role === 'owner' ? 'signature as owner/landlord' : 'signature';
+
+    if (party?.email) {
+      emailsToSend.push({
+        to: party.email,
+        subject: 'Your lease is ready to sign',
+        html: `
+          <p>Hi ${party.full_name || 'there'},</p>
+          <p>Your lease for ${lease.properties?.address || 'the property'} is ready for your ${roleLabel}.</p>
+          ${role === 'owner'
+            ? ''
+            : `<p><strong>Your verification code:</strong> ${otp || '(see previous email)'}</p>`}
+          <p><a href="https://zankagroup.co.za/lease-sign.html?lease=${leaseId}">Sign your lease</a></p>
+          ${role === 'owner' ? '' : '<p>This code expires in 48 hours.</p>'}
+        `,
+      });
     }
 
-    const roleLabel = role === 'guarantor' ? 'signature as guarantor' : role === 'owner' ? 'signature as owner/landlord' : 'signature';
-    emailsToSend.push({
-      to: party.email,
-      subject: 'Your lease is ready to sign',
-      html: `
-        <p>Hi ${party.full_name || 'there'},</p>
-        <p>Your lease for ${lease.properties?.address || 'the property'} is ready for your ${roleLabel}.</p>
-        <p><strong>Your verification code:</strong> ${otp || '(see previous email)'}</p>
-        <p><a href="https://zankagroup.co.za/lease-sign.html?lease=${leaseId}">Sign your lease</a></p>
-        <p>This code expires in 48 hours.</p>
-      `,
-    });
+    if (party?.phone) {
+      await sendWhatsAppTemplate(party.phone, TWILIO_TEMPLATE_OTP, {
+        '1': party.full_name || 'there',
+        '2': lease.properties?.address || 'the property',
+        '3': role === 'owner' ? 'no code needed — just tap the link' : (otp || 'see email'),
+      });
+    }
   }
 
   else if (eventType === 'lease_fully_executed') {
@@ -281,16 +530,27 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       console.error('Could not generate executed lease document:', docErr.message);
     }
 
-    const recipients = [lease.tenant, lease.guarantor].filter(p => p?.email);
-    if (lease.properties?.owner_id) {
-      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', lease.properties.owner_id).single();
-      if (owner?.email) recipients.push(owner);
+    const recipients = [lease.tenant, lease.guarantor].filter(p => p?.email || p?.phone);
+    const effectiveOwnerId2 = await resolveEffectiveOwnerId(lease.property_id);
+    if (effectiveOwnerId2) {
+      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name, phone').eq('id', effectiveOwnerId2).single();
+      if (owner?.email || owner?.phone) recipients.push(owner);
     }
-    recipients.forEach(p => emailsToSend.push({
-      to: p.email,
-      subject: 'Lease fully executed',
-      html: `<p>Hi ${p.full_name || 'there'},</p><p>The lease for ${lease.properties?.address || 'the property'} has been signed by all parties and is now Active.</p>`,
-    }));
+    recipients.forEach(p => {
+      if (p.email) {
+        emailsToSend.push({
+          to: p.email,
+          subject: 'Lease fully executed',
+          html: `<p>Hi ${p.full_name || 'there'},</p><p>The lease for ${lease.properties?.address || 'the property'} has been signed by all parties and is now Active.</p>`,
+        });
+      }
+    });
+    await Promise.all(recipients.filter(p => p.phone).map(p =>
+      sendWhatsAppTemplate(p.phone, TWILIO_TEMPLATE_EXECUTED, {
+        '1': p.full_name || 'there',
+        '2': lease.properties?.address || 'the property',
+      })
+    ));
   }
 
   else if (eventType === 'lease_escalation_notice') {
@@ -305,8 +565,9 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       'effective': 'Your New Rent is Effective',
     };
     const recipients = [lease.tenant].filter(p => p?.email);
-    if (lease.properties?.owner_id) {
-      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', lease.properties.owner_id).single();
+    const effectiveOwnerId3 = await resolveEffectiveOwnerId(lease.property_id);
+    if (effectiveOwnerId3) {
+      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', effectiveOwnerId3).single();
       if (owner?.email) recipients.push(owner);
     }
     recipients.forEach(p => emailsToSend.push({
@@ -324,8 +585,9 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
   else if (eventType === 'lease_renewal_reminder' || eventType === 'lease_rollover_notice') {
     const isRollover = eventType === 'lease_rollover_notice';
     const recipients = [lease.tenant].filter(p => p?.email);
-    if (lease.properties?.owner_id) {
-      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', lease.properties.owner_id).single();
+    const effectiveOwnerId4 = await resolveEffectiveOwnerId(lease.property_id);
+    if (effectiveOwnerId4) {
+      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', effectiveOwnerId4).single();
       if (owner?.email) recipients.push(owner);
     }
     recipients.forEach(p => emailsToSend.push({
@@ -387,7 +649,7 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
         tenant_otp_code: otp, tenant_otp_expires_at: expires.toISOString(),
       }).eq('id', inspectionId);
     } else if (role === 'owner') {
-      const ownerId = inspection.properties?.owner_id;
+      const ownerId = await resolveEffectiveOwnerId(inspection.property_id);
       if (!ownerId) throw new Error('This inspection has no property owner resolvable.');
       const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', ownerId).single();
       party = owner;
@@ -415,6 +677,81 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
   return await sendEmails(emailsToSend);
 }
 
+// Handles maintenance request lifecycle notifications: request logged
+// (tenant confirmation, plus owner/rep heads-up), and work completed.
+// Runs with the service role client for the same reason as the other
+// handlers — reading the tenant's/owner's contact details needs to
+// bypass RLS safely from a privileged server context.
+async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
+  if (!maintenanceRequestId) {
+    return new Response(JSON.stringify({ error: 'maintenance_request_id is required' }), { status: 400, headers: CORS_HEADERS });
+  }
+
+  const { data: request, error: reqError } = await supabaseAdmin
+    .from('maintenance_requests')
+    .select('*, tenant:tenant_id ( full_name, email, phone ), properties:property_id ( address )')
+    .eq('id', maintenanceRequestId)
+    .single();
+
+  if (reqError || !request) {
+    throw new Error(`Could not load maintenance request ${maintenanceRequestId}: ${reqError?.message || 'not found'}`);
+  }
+
+  const emailsToSend = [];
+  const address = request.properties?.address || 'your property';
+
+  if (eventType === 'maintenance_request_created') {
+    if (request.tenant?.email) {
+      emailsToSend.push({
+        to: request.tenant.email,
+        subject: 'Your maintenance request has been logged',
+        html: `<p>Hi ${request.tenant.full_name || 'there'},</p><p>Your maintenance request "${request.title}" for ${address} has been logged and is now in the queue. We'll update you once work begins.</p>`,
+      });
+    }
+    if (request.tenant?.phone) {
+      await sendWhatsAppTemplate(request.tenant.phone, TWILIO_TEMPLATE_MAINTENANCE_QUEUED, {
+        '1': request.tenant.full_name || 'there',
+        '2': request.title,
+        '3': address,
+      });
+    }
+
+    // Also notify whoever's responsible for the property — same
+    // effective-owner resolution used everywhere else, so this works
+    // correctly for entity-owned properties too.
+    const effectiveOwnerId = await resolveEffectiveOwnerId(request.property_id);
+    if (effectiveOwnerId) {
+      const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', effectiveOwnerId).single();
+      if (owner?.email) {
+        emailsToSend.push({
+          to: owner.email,
+          subject: 'New maintenance request logged',
+          html: `<p>Hi ${owner.full_name || 'there'},</p><p>A new maintenance request "${request.title}" has been logged for ${address}.</p>`,
+        });
+      }
+    }
+  }
+
+  else if (eventType === 'maintenance_request_completed') {
+    if (request.tenant?.email) {
+      emailsToSend.push({
+        to: request.tenant.email,
+        subject: 'Your maintenance request has been completed',
+        html: `<p>Hi ${request.tenant.full_name || 'there'},</p><p>The maintenance work for "${request.title}" at ${address} has been completed. Thank you for your patience.</p>`,
+      });
+    }
+    if (request.tenant?.phone) {
+      await sendWhatsAppTemplate(request.tenant.phone, TWILIO_TEMPLATE_MAINTENANCE_COMPLETE, {
+        '1': request.tenant.full_name || 'there',
+        '2': request.title,
+        '3': address,
+      });
+    }
+  }
+
+  return await sendEmails(emailsToSend);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
@@ -430,7 +767,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: CORS_HEADERS });
   }
 
-  const { document_id, status, recipient_context, meta_notes, lease_event, lease_id, inspection_event, inspection_id } = payload;
+  const { document_id, status, recipient_context, meta_notes, lease_event, lease_id, inspection_event, inspection_id, maintenance_event, maintenance_request_id } = payload;
 
   // ---------------- Lease Management events ----------------
   // Handled entirely separately from the document-approval flow above —
@@ -451,6 +788,16 @@ Deno.serve(async (req) => {
       return await handleInspectionEvent(inspection_event, inspection_id, payload);
     } catch (err) {
       console.error('inspection_event error:', err.message);
+      return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
+    }
+  }
+
+  // ---------------- Maintenance request events ----------------
+  if (maintenance_event) {
+    try {
+      return await handleMaintenanceEvent(maintenance_event, maintenance_request_id);
+    } catch (err) {
+      console.error('maintenance_event error:', err.message);
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
     }
   }
@@ -529,9 +876,9 @@ Deno.serve(async (req) => {
     if (status === 'Approved' && OWNER_TENANT_CATEGORIES.includes(doc.category)) {
       if (doc.tenant_id) {
         const { data: tenant } = await supabaseAdmin
-          .from('profiles').select('email, full_name').eq('id', doc.tenant_id).single();
+          .from('profiles').select('email, full_name, phone').eq('id', doc.tenant_id).single();
+        const isRentalInvoice = doc.category === 'Rent/Utility Invoice';
         if (tenant?.email) {
-          const isRentalInvoice = doc.category === 'Rent/Utility Invoice';
           emailsToSend.push({
             to: tenant.email,
             subject: isRentalInvoice ? `Your rental statement is ready` : `A new ${doc.category.toLowerCase()} has been added to your account`,
@@ -545,6 +892,22 @@ Deno.serve(async (req) => {
             `,
           });
         }
+        if (tenant?.phone) {
+          if (isRentalInvoice) {
+            await sendWhatsAppTemplate(tenant.phone, TWILIO_TEMPLATE_STATEMENT, {
+              '1': tenant.full_name || 'there',
+              '2': doc.statement_month ? new Date(doc.statement_month).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) : 'this period',
+              '3': Number(doc.total_amount || 0).toLocaleString(),
+              '4': 'https://zankagroup.co.za/tenant-dashboard.html',
+            });
+          } else {
+            await sendWhatsAppTemplate(tenant.phone, TWILIO_TEMPLATE_NEW_DOCUMENT, {
+              '1': tenant.full_name || 'there',
+              '2': doc.category,
+              '3': 'https://zankagroup.co.za/tenant-dashboard.html',
+            });
+          }
+        }
       }
       // Owner+tenant categories fall through to the owner notification below too.
     }
@@ -553,10 +916,10 @@ Deno.serve(async (req) => {
     // Every approved document notifies the owner. Owner+tenant categories
     // additionally notified the tenant just above.
     if (status === 'Approved') {
-      const ownerId = doc.owner_id || doc.properties?.owner_id;
+      const ownerId = doc.owner_id || await resolveEffectiveOwnerId(doc.property_id);
       if (ownerId) {
         const { data: owner } = await supabaseAdmin
-          .from('profiles').select('email, full_name').eq('id', ownerId).single();
+          .from('profiles').select('email, full_name, phone').eq('id', ownerId).single();
         if (owner?.email) {
           emailsToSend.push({
             to: owner.email,
@@ -567,6 +930,13 @@ Deno.serve(async (req) => {
               ${doc.total_amount ? `<p><strong>Total:</strong> R${Number(doc.total_amount).toLocaleString()}</p>` : ''}
               <p><a href="https://zankagroup.co.za/owner-dashboard.html">View in your Owner Portal</a></p>
             `,
+          });
+        }
+        if (owner?.phone) {
+          await sendWhatsAppTemplate(owner.phone, TWILIO_TEMPLATE_NEW_DOCUMENT, {
+            '1': owner.full_name || 'there',
+            '2': doc.category,
+            '3': 'https://zankagroup.co.za/owner-dashboard.html',
           });
         }
       }
