@@ -1,4 +1,4 @@
-// Zanka Group — Tenant dashboard 11h29
+// Zanka Group — Tenant dashboard 21h53
 // Requires supabase-client.js and auth.js loaded first.
 
 let currentProfile = null;
@@ -403,6 +403,23 @@ function renderDocList(elementId, rows, template) {
   el.innerHTML = rows.map(template).join('');
 }
 
+async function notifyLeaseEvent(eventType, extra = {}) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/dms-notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ maintenance_event: eventType, ...extra }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`dms-notifications returned ${res.status} for event '${eventType}':`, body);
+    }
+  } catch (err) {
+    console.error('Notification request failed:', err);
+  }
+}
+
 function wireMaintenanceForm(tenantId) {
   const form = document.getElementById('maintenance-form');
   if (!form) return;
@@ -410,9 +427,22 @@ function wireMaintenanceForm(tenantId) {
     e.preventDefault();
     const title = document.getElementById('maintenance-title').value.trim();
     const description = document.getElementById('maintenance-description').value.trim();
-    const { error } = await supabaseClient.from('maintenance_requests').insert([{
-      tenant_id: tenantId, title, description, status: 'Submitted'
-    }]);
+
+    // property_id was never being set here at all — maintenance
+    // requests had no property association, which also silently
+    // broke the Investor Portal's Maintenance section (it filters by
+    // property_id). Resolved from the tenant's own active lease,
+    // since a tenant only ever has one property they'd be reporting
+    // an issue for.
+    const { data: activeLease } = await supabaseClient
+      .from('leases').select('property_id')
+      .eq('tenant_id', tenantId).eq('status', 'Active')
+      .order('start_date', { ascending: false }).limit(1).maybeSingle();
+
+    const { data: inserted, error } = await supabaseClient.from('maintenance_requests').insert([{
+      tenant_id: tenantId, property_id: activeLease?.property_id || null, title, description, status: 'Submitted'
+    }]).select('id').single();
+
     const note = document.getElementById('maintenance-note');
     if (!error) {
       note.textContent = 'Request submitted.';
@@ -420,6 +450,10 @@ function wireMaintenanceForm(tenantId) {
       note.classList.add('text-green-700');
       form.reset();
       loadTenantData(tenantId);
+
+      if (inserted?.id) {
+        await notifyLeaseEvent('maintenance_request_created', { maintenance_request_id: inserted.id });
+      }
     } else {
       note.textContent = error.message;
       note.classList.remove('hidden');
