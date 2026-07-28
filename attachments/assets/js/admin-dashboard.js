@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 16h44
+// Zanka Group — Admin Dashboard 21h53
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
@@ -164,11 +164,33 @@ async function loadGlobalMaintenance() {
         <p class="text-xs text-gray-500 mt-0.5">${r.description || 'No detail provided.'}</p>
         <span class="text-[10px] text-gray-400 block mt-1">Logged ${new Date(r.created_at).toLocaleDateString()}</span>
       </div>
-      <span class="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${r.status === 'Completed' ? 'bg-green-100 text-green-700' : r.status === 'In Progress' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
-        ${r.status}
-      </span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${r.status === 'Completed' ? 'bg-green-100 text-green-700' : r.status === 'In Progress' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
+          ${r.status}
+        </span>
+        ${r.status !== 'Completed' ? `<button data-mark-complete="${r.id}" class="text-xs font-semibold text-gold hover:underline">Mark Complete</button>` : ''}
+      </div>
     </div>
   `).join('');
+
+  container.querySelectorAll('[data-mark-complete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const requestId = btn.dataset.markComplete;
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+
+      const { error } = await supabaseClient.from('maintenance_requests').update({ status: 'Completed' }).eq('id', requestId);
+      if (error) {
+        alert('Could not update: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Mark Complete';
+        return;
+      }
+
+      await notifyEdgeFunction({ maintenance_event: 'maintenance_request_completed', maintenance_request_id: requestId });
+      await loadGlobalMaintenance();
+    });
+  });
 }
 
 /* ---------------- Payments, across every tenant ---------------- */
