@@ -1,4 +1,4 @@
-// Zanka Group — Admin Dashboard 21h53
+// Zanka Group — Admin Dashboard 21h28
 // Requires supabase-client.js and auth.js loaded first.
 //
 // SECURITY NOTE: This dashboard uses the same public anon key as the rest
