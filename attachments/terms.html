@@ -22,7 +22,7 @@
   exactly once assets/css/style.css and assets/js/main.js are present
   alongside it in the repo. Only the <main> content is new.
   Google Fonts link added defensively in case style.css doesn't already
-  import Playfair Display/Inter — harmless duplicate if it does.
+  import Playfair Display/Inter (harmless duplicate if it does).
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -53,7 +53,7 @@
 <!-- Fallback rules for the site's custom component classes, in case this
      file is opened before assets/css/style.css exists alongside it.
      Once integrated into the real repo, style.css's real rules apply and
-     these are simply overridden — safe to leave in or strip out. -->
+     these are simply overridden, so it's safe to leave in or strip out. -->
 <style>
   .skip-link{position:absolute;left:-9999px;top:0}
   .skip-link:focus{left:1rem;top:1rem;background:#1F2A44;color:#fff;padding:.5rem 1rem;border-radius:.375rem;z-index:100}
