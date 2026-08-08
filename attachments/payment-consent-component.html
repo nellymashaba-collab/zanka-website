@@ -1,0 +1,96 @@
+<!--
+  ============================================================================
+  ZANKA — REUSABLE PAYMENT CONSENT COMPONENT
+  ============================================================================
+  Status check (confirmed against the live site on 8 Aug 2026): there is no
+  active checkout/payment page on zankagroup.co.za today — Pricing just
+  links "Get Started" buttons to /contact.html, and the handover doc says
+  PayFast live mode is still pending merchant verification. Per your
+  instructions, no fake checkout has been built. This component is a
+  drop-in, reusable block to wire into the PayFast checkout flow
+  (payfast-initiate) once that flow goes live.
+
+  WHAT IT DOES
+  - Renders an unchecked consent checkbox with links to both legal pages.
+  - Disables the payment/submit button until the box is checked.
+  - Also blocks submission defensively (in case the button gets re-enabled
+    by other code), so payment cannot proceed without consent either way.
+
+  HOW TO INTEGRATE
+  1. Copy the <div id="zanka-payment-consent">...</div> block into the
+     checkout page, immediately above the pay/submit button.
+  2. Copy the <script> block's logic into your checkout JS (or keep it
+     inline as-is). Update the two selectors marked TODO to match your
+     actual form/button.
+  3. If the PayFast form submit is triggered by a JS function (e.g. inside
+     lease-manager.js / a checkout script calling payfast-initiate) rather
+     than a plain form submit, call zankaConsentGiven() at the top of that
+     function and stop if it returns false — see the commented example at
+     the bottom of the script.
+  ============================================================================
+-->
+
+<!-- Uses the site's real navy/gold classes (from index.html's tailwind.config) so it
+     inherits the actual brand automatically once dropped into a real page. -->
+<div id="zanka-payment-consent" class="flex items-start gap-3 mb-6">
+  <!-- intentionally no "checked" attribute here; JS below also enforces unchecked default -->
+  <input
+    type="checkbox"
+    id="zanka-consent-checkbox"
+    class="mt-1 h-4 w-4 rounded border-gray-300 text-navy focus:ring-gold"
+  >
+  <label for="zanka-consent-checkbox" class="text-sm text-gray-700">
+    I have read and agree to Zanka Group's
+    <a href="terms.html" target="_blank" rel="noopener" class="text-navy underline hover:text-gold">Terms &amp; Conditions</a>
+    and
+    <a href="refund-policy.html" target="_blank" rel="noopener" class="text-navy underline hover:text-gold">Refund &amp; Cancellation Policy</a>.
+  </label>
+</div>
+
+<p class="text-xs text-gray-500 mb-6">
+  Payments are in South African Rand (ZAR) and processed through PayFast or another authorised
+  payment provider. Payment confirmation is subject to successful processing by the applicable
+  payment provider. Refunds and cancellations are subject to Zanka Group's
+  <a href="refund-policy.html" target="_blank" rel="noopener" class="text-navy underline hover:text-gold">Refund &amp; Cancellation Policy</a>.
+</p>
+
+<script>
+(function () {
+  var checkbox = document.getElementById('zanka-consent-checkbox');
+
+  // TODO: replace with the real checkout page's pay/submit button selector
+  var payButton = document.querySelector('#pay-button, [data-role="payfast-submit"], button[type="submit"]');
+
+  // TODO: if the checkout is a real <form> that posts to PayFast, replace
+  // with that form's selector so we can block submission defensively too
+  var payForm = document.querySelector('#checkout-form, form[data-payfast]');
+
+  function updateButtonState() {
+    if (!payButton) return;
+    payButton.disabled = !checkbox.checked;
+    payButton.classList.toggle('opacity-50', !checkbox.checked);
+    payButton.classList.toggle('cursor-not-allowed', !checkbox.checked);
+  }
+
+  // Exposed helper other checkout scripts can call before initiating PayFast,
+  // e.g.: if (!zankaConsentGiven()) { alert('Please accept the Terms & Conditions and Refund Policy.'); return; }
+  window.zankaConsentGiven = function () {
+    return !!(checkbox && checkbox.checked);
+  };
+
+  if (checkbox) {
+    checkbox.checked = false; // enforced default: never pre-selected
+    checkbox.addEventListener('change', updateButtonState);
+    updateButtonState();
+  }
+
+  if (payForm) {
+    payForm.addEventListener('submit', function (e) {
+      if (!window.zankaConsentGiven()) {
+        e.preventDefault();
+        alert('Please confirm you have read and agree to the Terms & Conditions and Refund & Cancellation Policy before continuing to payment.');
+      }
+    });
+  }
+})();
+</script>

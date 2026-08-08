@@ -1,0 +1,47 @@
+<!--
+  FOOTER PATCH — exact diff against the index.html you uploaded (lines 325–334)
+  ==============================================================================
+  This same footer block appears identically at the bottom of every page
+  (confirmed against about.html, pricing.html and contact.html's rendered
+  output — same markup, same links). There's no shared partial/include in
+  this codebase (per the handover doc: plain HTML files, no templating),
+  so this replacement needs to be made in every .html file's footer:
+  index.html, about.html, services.html, pricing.html, resources.html,
+  contact.html, for-landlords.html, for-investors.html, insights.html,
+  and any others that share this footer.
+
+  BEFORE (current, in every page):
+
+    <div class="border-t border-white/10">
+      <div class="max-w-7xl mx-auto px-5 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+        <p>&copy; <span data-year></span> Zanka Group (Pty) Ltd. All rights reserved.</p>
+        <div class="flex gap-5">
+          <a href="privacy.html" class="hover:text-gold transition">Privacy Policy</a>
+          <a href="terms.html" class="hover:text-gold transition">Terms of Service</a>
+          <a href="popia.html" class="hover:text-gold transition">POPIA Notice</a>
+        </div>
+      </div>
+    </div>
+
+  AFTER (replace with this — same classes, same structure, just the
+  4-link row with "Terms of Service" relabelled and a new Refund link
+  added, in the order you specified):
+-->
+
+<div class="border-t border-white/10">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+    <p>&copy; <span data-year></span> Zanka Group (Pty) Ltd. All rights reserved.</p>
+    <div class="flex gap-5">
+      <a href="terms.html" class="hover:text-gold transition">Terms &amp; Conditions</a>
+      <a href="refund-policy.html" class="hover:text-gold transition">Refund &amp; Cancellation Policy</a>
+      <a href="privacy.html" class="hover:text-gold transition">Privacy Policy</a>
+      <a href="popia.html" class="hover:text-gold transition">POPIA Notice</a>
+    </div>
+  </div>
+</div>
+
+<!--
+  Nothing else in the footer changes — logo, tagline, portal buttons,
+  Company/Services/Contact columns and the copyright line stay exactly
+  as they are today.
+-->
