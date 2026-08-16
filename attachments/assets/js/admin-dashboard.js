@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadGlobalMaintenance();
   await loadGlobalPayments();
   await loadReportsPeriods();
+  await loadReportsProperties();
   wireReportsExportForm();
   await populateRentalSelects();
   wireRentalUploadForm();
@@ -247,6 +248,7 @@ async function loadGlobalPayments() {
               status: 'Paid',
               paid_date: today,
               paid_at: new Date().toISOString(),
+              payment_method: 'Manual',
               gateway_reference: reference || row?.gateway_reference || null,
             })
             .eq('id', paymentId);
@@ -296,6 +298,21 @@ async function loadReportsPeriods() {
   }).join('');
 }
 
+async function loadReportsProperties() {
+  const select = document.getElementById('reports-property-select');
+  if (!select) return;
+
+  const { data: properties, error } = await supabaseClient
+    .from('properties')
+    .select('id, address')
+    .order('address');
+
+  if (error || !properties) return;
+
+  select.innerHTML = '<option value="">All properties</option>' +
+    properties.map(p => `<option value="${p.id}" data-label="${p.address}">${p.address}</option>`).join('');
+}
+
 function wireReportsExportForm() {
   const form = document.getElementById('reports-export-form');
   if (!form) return;
@@ -303,12 +320,15 @@ function wireReportsExportForm() {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const select = document.getElementById('reports-period-select');
+    const propertySelect = document.getElementById('reports-property-select');
     const btn = document.getElementById('reports-export-btn');
     const errorEl = document.getElementById('reports-export-error');
     errorEl.classList.add('hidden');
 
     const periodId = select.value;
     const periodLabel = select.selectedOptions[0]?.dataset.label || 'Period';
+    const propertyId = propertySelect?.value || null;
+    const propertyLabel = propertyId ? (propertySelect.selectedOptions[0]?.dataset.label || 'Property') : 'All-Properties';
     if (!periodId) return;
 
     const originalText = btn.textContent;
@@ -316,15 +336,18 @@ function wireReportsExportForm() {
     btn.textContent = 'Building export…';
 
     try {
-      // Sheet 1: period trial balance (server-side aggregation, not lifetime).
+      // Sheet 1: period trial balance (server-side aggregation, not lifetime),
+      // scoped to the selected property when one is chosen.
       const { data: trialBalance, error: tbError } = await supabaseClient
-        .rpc('get_period_trial_balance', { p_period_id: periodId });
+        .rpc('get_period_trial_balance', { p_period_id: periodId, p_property_id: propertyId ? Number(propertyId) : null });
       if (tbError) throw tbError;
 
-      // Sheet 2: every posted journal line within this period.
+      // Sheet 2: every posted journal line within this period — fetched
+      // unfiltered, then narrowed to the selected property client-side
+      // (line-level property_id, not something journal_entries itself has).
       const { data: entries, error: jeError } = await supabaseClient
         .from('journal_entries')
-        .select('journal_number, entry_date, description, reference, source_type, journal_lines ( line_number, account_code, dr_cr, amount, description, ref_code )')
+        .select('journal_number, entry_date, description, reference, source_type, journal_lines ( line_number, account_code, dr_cr, amount, description, ref_code, property_id )')
         .eq('period_id', periodId)
         .eq('status', 'Posted')
         .order('entry_date');
@@ -336,6 +359,7 @@ function wireReportsExportForm() {
       const detailRows = [];
       (entries || []).forEach(je => {
         (je.journal_lines || [])
+          .filter(jl => !propertyId || String(jl.property_id) === String(propertyId))
           .sort((a, b) => a.line_number - b.line_number)
           .forEach(jl => {
             detailRows.push({
@@ -365,7 +389,7 @@ function wireReportsExportForm() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tbRows), 'Trial Balance');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), 'Journal Detail');
-      XLSX.writeFile(wb, `Zanka-Ledger-${periodLabel.replace(/\s+/g, '-')}.xlsx`);
+      XLSX.writeFile(wb, `Zanka-Ledger-${periodLabel.replace(/\s+/g, '-')}-${propertyLabel.replace(/\s+/g, '-')}.xlsx`);
     } catch (err) {
       errorEl.textContent = 'Export failed: ' + err.message;
       errorEl.classList.remove('hidden');
@@ -825,12 +849,15 @@ async function handleRentalUploadSubmit(e) {
     const { data: opRow, error: opError } = await supabaseClient
       .from('rental_invoices').insert([{
         property_id: propertyId,
+        tenant_id: tenantId,
         invoice_date: documentDate,
         net_rental: breakdown.net_rental,
         electricity: breakdown.electricity,
         water: breakdown.water,
         sewerage: breakdown.sewerage,
         other_charges: breakdown.other_charges,
+        discount,
+        vat,
       }]).select().single();
     if (opError) throw opError;
 
@@ -871,6 +898,7 @@ async function handleRentalUploadSubmit(e) {
 
     const { error: paymentError } = await supabaseClient.from('payments').insert([{
       tenant_id: tenantId,
+      rental_invoice_id: opRow.id,
       amount: totalAmount,
       due_date: dueDate.toISOString().slice(0, 10),
       status: 'Pending',
