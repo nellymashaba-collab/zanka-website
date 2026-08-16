@@ -9,6 +9,7 @@
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -79,6 +80,10 @@
       <button data-section-link="documents" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6m-6 4h6"/></svg>
         <span>Documents</span>
+      </button>
+      <button data-section-link="reports" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19h16M6 19V9m5 10V5m5 14v-7"/></svg>
+        <span>Reports</span>
       </button>
       <a href="lease-dashboard.html" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h6M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/></svg>
@@ -190,9 +195,11 @@
           <table class="w-full text-left">
             <thead>
               <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-2 font-semibold">Tenant</th>
                 <th class="py-2 px-2 font-semibold">Date</th>
                 <th class="py-2 px-2 font-semibold">Amount</th>
                 <th class="py-2 px-2 font-semibold">Status</th>
+                <th class="py-2 px-2 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody id="admin-payments-tbody"></tbody>
@@ -200,6 +207,24 @@
         </div>
       </div>
     </section>
+    <!-- REPORTS -->
+    <section data-section="reports" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">Ledger</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-8">Reports</h1>
+      <div class="card p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Export to Excel</h2>
+        <p class="text-sm text-gray-500 mb-5">Pick an accounting period and export its trial balance and full journal detail as an .xlsx file.</p>
+        <form id="reports-export-form" class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[220px]">
+            <label class="field-label" for="reports-period-select">Period</label>
+            <select class="field" id="reports-period-select" required></select>
+          </div>
+          <button type="submit" id="reports-export-btn" class="btn btn-primary !py-2.5">Export to Excel</button>
+        </form>
+        <p id="reports-export-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+    </section>
+
     <!-- DOCUMENTS -->
     <section data-section="documents" class="p-5 sm:p-8 hidden">
       <p class="eyebrow mb-2">Document Management</p>
