@@ -817,12 +817,6 @@ async function handleRentalUploadSubmit(e) {
   errorEl.classList.add('hidden');
   successEl.classList.add('hidden');
 
-  if (!rentalUploadFile) {
-    errorEl.textContent = 'Attach a file before publishing.';
-    errorEl.classList.remove('hidden');
-    return;
-  }
-
   const submitBtn = document.getElementById('rental-submit');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Publishing…';
@@ -840,18 +834,6 @@ async function handleRentalUploadSubmit(e) {
       throw new Error('All fields are required.');
     }
 
-    const extension = (rentalUploadFile.name.split('.').pop() || 'pdf').toLowerCase();
-    const generatedFilename = buildGeneratedFilename({
-      documentDate, category: 'Rent/Utility Invoice', propertyCode: propertyId,
-      tenantName: tenantSelect.selectedOptions[0]?.textContent || 'NA',
-      statementMonth, extension,
-    });
-
-    const [year, month] = statementMonth.split('-');
-    const storagePath = `documents/rent-utility-invoices/${propertyId}/${tenantId}/${year}/${month}/${generatedFilename}`;
-
-    await uploadFileWithProgress(rentalUploadFile, storagePath, 'rental');
-
     const breakdown = {
       net_rental: parseFloat(document.getElementById('rental-net-rental').value) || 0,
       electricity: parseFloat(document.getElementById('rental-electricity').value) || 0,
@@ -863,6 +845,61 @@ async function handleRentalUploadSubmit(e) {
     const discount = parseFloat(document.getElementById('rental-discount').value) || 0;
     const vat = parseFloat(document.getElementById('rental-vat').value) || 0;
     const totalAmount = subtotal - discount + vat;
+
+    // No file attached? Generate the same branded, itemized PDF the
+    // Generate Invoice panel produces, instead of requiring the admin to
+    // already have a document — only the actual line items differ (this
+    // flow has other_charges/discount/VAT, that one has refuse).
+    let fileToUpload = rentalUploadFile;
+    let fileName;
+    if (!fileToUpload) {
+      const { data: tenantProfile } = await supabaseClient.from('profiles').select('phone').eq('id', tenantId).single();
+      const dueDatePreview = new Date(documentDate);
+      dueDatePreview.setDate(dueDatePreview.getDate() + 7);
+
+      const lineItems = [
+        { label: 'Rental Billed', charge: breakdown.net_rental },
+        { label: 'Electricity Billed in Arrears', charge: breakdown.electricity },
+        { label: 'Water Billed in Arrears', charge: breakdown.water },
+        { label: 'Sewage Billed in Arrears', charge: breakdown.sewerage },
+      ];
+      if (breakdown.other_charges > 0) lineItems.push({ label: 'Other Charges', charge: breakdown.other_charges });
+      if (discount > 0) lineItems.push({ label: 'Discount', charge: 0, credit: discount });
+      if (vat > 0) lineItems.push({ label: 'VAT', charge: vat });
+
+      const refNumber = `RU-${documentDate.replace(/-/g, '')}-${propertyId}`;
+      const pdfBlob = await generateInvoicePdfBlob(null, {
+        invoiceNumber: refNumber,
+        invoiceDate: documentDate,
+        dueDate: dueDatePreview.toISOString().slice(0, 10),
+        termsDays: 7,
+        tenantName: tenantSelect.selectedOptions[0]?.textContent || 'Tenant',
+        tenantPhone: tenantProfile?.phone || '',
+        propertyAddress: propertySelect.selectedOptions[0]?.textContent || '',
+        lineItems,
+        totalDue: totalAmount,
+      });
+      fileToUpload = pdfBlob;
+      fileName = `${refNumber}.pdf`;
+    } else {
+      fileName = rentalUploadFile.name;
+    }
+
+    const extension = (fileName.split('.').pop() || 'pdf').toLowerCase();
+    const generatedFilename = buildGeneratedFilename({
+      documentDate, category: 'Rent/Utility Invoice', propertyCode: propertyId,
+      tenantName: tenantSelect.selectedOptions[0]?.textContent || 'NA',
+      statementMonth, extension,
+    });
+
+    const [year, month] = statementMonth.split('-');
+    const storagePath = `documents/rent-utility-invoices/${propertyId}/${tenantId}/${year}/${month}/${generatedFilename}`;
+
+    if (rentalUploadFile) {
+      await uploadFileWithProgress(fileToUpload, storagePath, 'rental');
+    } else {
+      await uploadInvoiceFile(fileToUpload, storagePath, 'application/pdf');
+    }
 
     // Publish immediately — no Pending Approval state for this category.
     const { data: opRow, error: opError } = await supabaseClient
@@ -889,7 +926,7 @@ async function handleRentalUploadSubmit(e) {
       statement_month: statementMonth + '-01',
       document_date: documentDate,
       due_date: null,
-      original_filename: rentalUploadFile.name,
+      original_filename: fileName,
       generated_filename: generatedFilename,
       storage_path: storagePath,
       subtotal,
@@ -1147,6 +1184,11 @@ function applyDirectCategoryRules(category) {
   const financialSummary = document.getElementById('direct-financial-summary');
   const leaseEndDateWrap = document.getElementById('direct-lease-end-date-wrap');
   const leaseEndDateInput = document.getElementById('direct-lease-end-date');
+  const levyRechargeWrap = document.getElementById('direct-levy-recharge-wrap');
+  const levyRechargeCheckbox = document.getElementById('direct-levy-recharge-checkbox');
+
+  levyRechargeWrap.classList.toggle('hidden', category !== 'Levy Statement');
+  if (category !== 'Levy Statement') levyRechargeCheckbox.checked = false;
 
   if (!config) {
     tenantSelect.required = false;
@@ -1251,6 +1293,13 @@ async function handleDirectUploadSubmit(e) {
     return;
   }
 
+  const wantsLevyRecharge = category === 'Levy Statement' && document.getElementById('direct-levy-recharge-checkbox').checked;
+  if (wantsLevyRecharge && !tenantId) {
+    errorEl.textContent = 'Select a tenant to invoice for this levy amount, or uncheck "Also invoice the tenant."';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
   const submitBtn = document.getElementById('direct-submit');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Publishing…';
@@ -1327,6 +1376,41 @@ async function handleDirectUploadSubmit(e) {
     }]).select().single();
     if (docError) throw docError;
 
+    // Optional: recharge this levy amount to the tenant as its own line,
+    // kept separate from rent/electricity/water/sewerage (018/020's
+    // dedicated levy_csos column and 6360 Levy Recoveries account).
+    let leviedTenant = false;
+    if (wantsLevyRecharge) {
+      const dueDate = new Date(documentDate);
+      dueDate.setDate(dueDate.getDate() + 7);
+
+      const { data: leviedInvoice, error: levyInvoiceError } = await supabaseClient
+        .from('rental_invoices').insert([{
+          property_id: propertyId,
+          tenant_id: tenantId,
+          invoice_date: documentDate,
+          net_rental: 0,
+          electricity: 0,
+          water: 0,
+          sewerage: 0,
+          other_charges: 0,
+          levy_csos: subtotal,
+          discount,
+          vat,
+        }]).select().single();
+      if (levyInvoiceError) throw levyInvoiceError;
+
+      const { error: levyPaymentError } = await supabaseClient.from('payments').insert([{
+        tenant_id: tenantId,
+        rental_invoice_id: leviedInvoice.id,
+        amount: totalAmount,
+        due_date: dueDate.toISOString().slice(0, 10),
+        status: 'Pending',
+      }]);
+      if (levyPaymentError) throw levyPaymentError;
+      leviedTenant = true;
+    }
+
     await notifyEdgeFunction({
       document_id: docRow.id,
       status: 'Approved',
@@ -1334,7 +1418,7 @@ async function handleDirectUploadSubmit(e) {
       meta_notes: `${category} published for ${statementMonth}.`,
     });
 
-    successEl.textContent = `${category} published${config.audience === 'owner_tenant' ? ' to owner and tenant.' : ' to owner.'}`;
+    successEl.textContent = `${category} published${config.audience === 'owner_tenant' ? ' to owner and tenant.' : ' to owner.'}${leviedTenant ? ' Tenant invoiced for the levy amount.' : ''}`;
     successEl.classList.remove('hidden');
     document.getElementById('direct-upload-form').reset();
     directUploadFile = null;
@@ -1782,12 +1866,18 @@ function renderTenantInvoicePdf(jsPDFCtor, d) {
   y = billCardTop + billCardH + 34;
 
   // ---------- Charges table ----------
-  const rows = [
-    ['Rental Billed', d.netRental],
-    ['Electricity Billed in Arrears (Pro Rata)', d.electricity],
-    ['Water Billed in Arrears', d.water],
-    ['Sewage Billed in Arrears', d.sewerage],
-    ['Refuse Billed in Arrears', d.refuse],
+  // d.lineItems: [{ label, charge, credit }, ...] — credit is optional
+  // (used for discounts), defaults to 0. Variable length by design: the
+  // tenant-invoice flow always sends 5 fixed rows, the Rent/Utility
+  // Invoice flow sends whichever components are actually non-zero
+  // (rent/electricity/water/sewerage/other/levy/VAT), so this can't be
+  // a hardcoded 5-row table the way it started out.
+  const rows = d.lineItems || [
+    { label: 'Rental Billed', charge: d.netRental },
+    { label: 'Electricity Billed in Arrears (Pro Rata)', charge: d.electricity },
+    { label: 'Water Billed in Arrears', charge: d.water },
+    { label: 'Sewage Billed in Arrears', charge: d.sewerage },
+    { label: 'Refuse Billed in Arrears', charge: d.refuse },
   ];
 
   const colDesc = margin + 10;
@@ -1809,6 +1899,8 @@ function renderTenantInvoicePdf(jsPDFCtor, d) {
 
   let rowY = y + headerH;
   rows.forEach((row, i) => {
+    const charge = row.charge || 0;
+    const credit = row.credit || 0;
     if (i % 2 === 1) {
       doc.setFillColor(250, 250, 251);
       doc.rect(margin, rowY, contentW, rowH, 'F');
@@ -1816,12 +1908,12 @@ function renderTenantInvoicePdf(jsPDFCtor, d) {
     doc.setTextColor(51, 56, 70);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
-    doc.text(row[0], colDesc, rowY + 17);
-    doc.text(fmtMoney(row[1]), colCharges, rowY + 17, { align: 'right' });
-    doc.text('–', colCredits, rowY + 17, { align: 'right' });
+    doc.text(row.label, colDesc, rowY + 17);
+    doc.text(charge ? fmtMoney(charge) : '–', colCharges, rowY + 17, { align: 'right' });
+    doc.text(credit ? '(' + fmtMoney(credit) + ')' : '–', colCredits, rowY + 17, { align: 'right' });
     doc.setTextColor(...NAVY);
     doc.setFont('helvetica', 'bold');
-    doc.text(fmtMoney(row[1]), colTotal, rowY + 17, { align: 'right' });
+    doc.text(fmtMoney(charge - credit), colTotal, rowY + 17, { align: 'right' });
     doc.setDrawColor(...BORDER);
     doc.line(margin, rowY + rowH, margin + contentW, rowY + rowH);
     rowY += rowH;
