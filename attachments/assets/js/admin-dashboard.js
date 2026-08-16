@@ -578,6 +578,24 @@ const CATEGORY_CONFIG = {
       },
     }),
   },
+  'Levy Statement': {
+    // Body corporate / CSOS levies for the unit, billed to the owner —
+    // distinct from a tenant's rental invoice. Structurally identical to
+    // Owner Statement, just its own table so it renders in the Levy
+    // Statements card on the Owner and Investor dashboards specifically.
+    audience: 'owner',
+    requiresTenant: false,
+    financialMode: 'generic',
+    publish: (doc) => ({
+      table: 'levy_statements',
+      row: {
+        owner_id: doc.owner_id,
+        property_id: doc.property_id,
+        title: doc.generated_filename,
+        file_url: doc.signed_url,
+      },
+    }),
+  },
 };
 
 const DOCUMENT_CATEGORY_FOLDERS = {
@@ -590,6 +608,7 @@ const DOCUMENT_CATEGORY_FOLDERS = {
   'Maintenance Invoice': 'maintenance-invoices',
   'Professional Fees Invoice': 'professional-fees-invoices',
   'Owner Statement': 'owner-statements',
+  'Levy Statement': 'levy-statements',
 };
 
 function sanitiseSegment(text) {
