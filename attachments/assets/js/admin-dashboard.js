@@ -27,6 +27,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadPortfolioTable();
   await loadGlobalMaintenance();
   await loadGlobalPayments();
+  await loadReportsPeriods();
+  wireReportsExportForm();
   await populateRentalSelects();
   wireRentalUploadForm();
   await populateDirectSelects();
@@ -197,40 +199,181 @@ async function loadGlobalMaintenance() {
 async function loadGlobalPayments() {
   const { data: payments, error } = await supabaseClient
     .from('payments')
-    .select('*')
+    .select('*, profiles:tenant_id ( full_name )')
     .order('paid_at', { ascending: false });
 
-  const renderInto = (id, rows) => {
+  const renderInto = (id, rows, withAction) => {
     const tbody = document.getElementById(id);
     if (!tbody) return;
+    const colspan = withAction ? 5 : 3;
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-sm text-red-500 text-center">${error.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="py-4 text-sm text-red-500 text-center">${error.message}</td></tr>`;
       return;
     }
     if (!rows || rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-sm text-gray-400 text-center">No payments recorded.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="py-4 text-sm text-gray-400 text-center">No payments recorded.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map(p => `
       <tr class="border-b border-gray-100 text-sm">
-        <td class="py-3 px-2 text-gray-600">${p.paid_at ? new Date(p.paid_at).toLocaleDateString() : 'Pending'}</td>
+        ${withAction ? `<td class="py-3 px-2 text-gray-700">${p.profiles?.full_name || 'Unknown tenant'}</td>` : ''}
+        <td class="py-3 px-2 text-gray-600">${p.paid_at ? new Date(p.paid_at).toLocaleDateString() : (p.due_date ? 'Due ' + new Date(p.due_date).toLocaleDateString() : 'Pending')}</td>
         <td class="py-3 px-2 font-semibold text-navy">R${Number(p.amount).toLocaleString()}</td>
         <td class="py-3 px-2">
           <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${p.status === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
             ${p.status}
           </span>
         </td>
+        ${withAction ? `<td class="py-3 px-2">${p.status !== 'Paid' ? `<button data-mark-paid="${p.id}" class="text-xs font-semibold text-gold hover:underline">Mark as Paid (EFT)</button>` : '<span class="text-xs text-gray-300">—</span>'}</td>` : ''}
       </tr>`).join('');
+
+    if (withAction) {
+      tbody.querySelectorAll('[data-mark-paid]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const paymentId = btn.dataset.markPaid;
+          const row = (payments || []).find(p => String(p.id) === String(paymentId));
+          const label = row ? `R${Number(row.amount).toLocaleString()} from ${row.profiles?.full_name || 'this tenant'}` : 'this payment';
+          if (!confirm(`Confirm ${label} was received via EFT and mark it Paid? This posts it to the ledger immediately.`)) return;
+
+          const reference = prompt('EFT reference / bank statement note (optional):', '') || null;
+
+          btn.disabled = true;
+          btn.textContent = 'Updating…';
+
+          const today = new Date().toISOString().slice(0, 10);
+          const { error: updateError } = await supabaseClient
+            .from('payments')
+            .update({
+              status: 'Paid',
+              paid_date: today,
+              paid_at: new Date().toISOString(),
+              gateway_reference: reference || row?.gateway_reference || null,
+            })
+            .eq('id', paymentId);
+
+          if (updateError) {
+            alert('Could not update: ' + updateError.message);
+            btn.disabled = false;
+            btn.textContent = 'Mark as Paid (EFT)';
+            return;
+          }
+
+          await loadGlobalPayments();
+        });
+      });
+    }
   };
 
-  // Full table on the Payments section; most recent 10 on the Dashboard section.
-  renderInto('admin-payments-tbody', payments);
-  renderInto('admin-payments-tbody-dashboard', (payments || []).slice(0, 10));
+  // Full table (with action buttons) on the Payments section; read-only
+  // preview of the most recent 10 on the Dashboard section.
+  renderInto('admin-payments-tbody', payments, true);
+  renderInto('admin-payments-tbody-dashboard', (payments || []).slice(0, 10), false);
 }
 
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+/* ---------------- Reports: export a period to Excel ---------------- */
+async function loadReportsPeriods() {
+  const select = document.getElementById('reports-period-select');
+  if (!select) return;
+
+  const { data: periods, error } = await supabaseClient
+    .from('accounting_periods')
+    .select('id, period_start, period_end, status')
+    .order('period_start', { ascending: false });
+
+  if (error || !periods || periods.length === 0) {
+    select.innerHTML = '<option value="">No periods found</option>';
+    return;
+  }
+
+  select.innerHTML = periods.map(p => {
+    const label = new Date(p.period_start).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
+    return `<option value="${p.id}" data-label="${label}">${label} (${p.status})</option>`;
+  }).join('');
+}
+
+function wireReportsExportForm() {
+  const form = document.getElementById('reports-export-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const select = document.getElementById('reports-period-select');
+    const btn = document.getElementById('reports-export-btn');
+    const errorEl = document.getElementById('reports-export-error');
+    errorEl.classList.add('hidden');
+
+    const periodId = select.value;
+    const periodLabel = select.selectedOptions[0]?.dataset.label || 'Period';
+    if (!periodId) return;
+
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Building export…';
+
+    try {
+      // Sheet 1: period trial balance (server-side aggregation, not lifetime).
+      const { data: trialBalance, error: tbError } = await supabaseClient
+        .rpc('get_period_trial_balance', { p_period_id: periodId });
+      if (tbError) throw tbError;
+
+      // Sheet 2: every posted journal line within this period.
+      const { data: entries, error: jeError } = await supabaseClient
+        .from('journal_entries')
+        .select('journal_number, entry_date, description, reference, source_type, journal_lines ( line_number, account_code, dr_cr, amount, description, ref_code )')
+        .eq('period_id', periodId)
+        .eq('status', 'Posted')
+        .order('entry_date');
+      if (jeError) throw jeError;
+
+      const accountNames = {};
+      (trialBalance || []).forEach(a => { accountNames[a.account_code] = a.account_name; });
+
+      const detailRows = [];
+      (entries || []).forEach(je => {
+        (je.journal_lines || [])
+          .sort((a, b) => a.line_number - b.line_number)
+          .forEach(jl => {
+            detailRows.push({
+              'Journal': je.journal_number,
+              'Date': je.entry_date,
+              'Source': je.source_type,
+              'Reference': je.reference || '',
+              'Description': jl.description || je.description || '',
+              'Account Code': jl.account_code,
+              'Account Name': accountNames[jl.account_code] || '',
+              'Dr/Cr': jl.dr_cr,
+              'Amount': Number(jl.amount),
+            });
+          });
+      });
+
+      const tbRows = (trialBalance || []).map(a => ({
+        'Account Code': a.account_code,
+        'Account Name': a.account_name,
+        'Type': a.account_type,
+        'Debit': Number(a.debit),
+        'Credit': Number(a.credit),
+      }));
+
+      if (typeof XLSX === 'undefined') throw new Error('Excel export library did not load — check your connection and try again.');
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tbRows), 'Trial Balance');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), 'Journal Detail');
+      XLSX.writeFile(wb, `Zanka-Ledger-${periodLabel.replace(/\s+/g, '-')}.xlsx`);
+    } catch (err) {
+      errorEl.textContent = 'Export failed: ' + err.message;
+      errorEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
 }
 
 // Resolves the effective owner id for a batch of properties at once
