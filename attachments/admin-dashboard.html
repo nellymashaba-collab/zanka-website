@@ -346,9 +346,9 @@
           </div>
 
           <div>
-            <label class="field-label">Document File <span class="text-gray-400 font-normal">(max 20MB)</span></label>
+            <label class="field-label">Document File <span class="text-gray-400 font-normal">(optional, max 20MB — leave blank and a branded invoice PDF is generated automatically from the amounts below)</span></label>
             <div id="rental-dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-gold transition">
-              <p class="text-sm text-gray-500">Drag and drop a file here, or click to browse</p>
+              <p class="text-sm text-gray-500">Drag and drop a file here, or click to browse — or leave blank to auto-generate</p>
               <input type="file" id="rental-file-input" class="hidden">
             </div>
             <p id="rental-file-name" class="text-sm text-navy font-medium mt-2 hidden"></p>
@@ -464,6 +464,14 @@
           <div id="direct-financial-wrap">
             <label class="field-label" for="direct-amount">Amount (R)</label>
             <input class="field direct-financial-input" type="number" step="0.01" id="direct-amount" value="0">
+          </div>
+
+          <div id="direct-levy-recharge-wrap" class="hidden bg-offwhite rounded-xl p-4">
+            <label class="flex items-center gap-2 text-sm text-navy font-medium">
+              <input type="checkbox" id="direct-levy-recharge-checkbox" class="rounded border-gray-300">
+              Also invoice the tenant for this levy amount
+            </label>
+            <p class="text-xs text-gray-500 mt-1">Creates a separate levy/CSOS recharge invoice for the tenant selected above, using the Total Invoice Amount below — kept apart from rent, electricity, water and sewerage.</p>
           </div>
 
           <div id="direct-financial-summary" class="border-t border-gray-100 pt-4 space-y-3">
