@@ -219,6 +219,12 @@
             <label class="field-label" for="reports-period-select">Period</label>
             <select class="field" id="reports-period-select" required></select>
           </div>
+          <div class="flex-1 min-w-[220px]">
+            <label class="field-label" for="reports-property-select">Property</label>
+            <select class="field" id="reports-property-select">
+              <option value="">All properties</option>
+            </select>
+          </div>
           <button type="submit" id="reports-export-btn" class="btn btn-primary !py-2.5">Export to Excel</button>
         </form>
         <p id="reports-export-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
@@ -395,7 +401,7 @@
            (owner only). -->
       <div class="card p-6 mb-8">
         <h2 class="font-display font-semibold text-navy text-lg mb-1">Upload Document (Direct)</h2>
-        <p class="text-sm text-gray-500 mb-5">Admin can publish any document type directly — no approval step. Recipients depend on category: Lease, Inspection Report, Pictures and Bulletin go to owner and tenant; Commission Statement, Maintenance Invoice and Owner Statement go to owner only.</p>
+        <p class="text-sm text-gray-500 mb-5">Admin can publish any document type directly — no approval step. Recipients depend on category: Lease, Inspection Report, Pictures and Bulletin go to owner and tenant; Commission Statement, Maintenance Invoice, Professional Fees Invoice, Owner Statement and Levy Statement go to owner only.</p>
         <form id="direct-upload-form" class="space-y-4">
           <div>
             <label class="field-label" for="direct-category">Document Category</label>
@@ -409,6 +415,7 @@
               <option>Maintenance Invoice</option>
               <option>Professional Fees Invoice</option>
               <option>Owner Statement</option>
+              <option>Levy Statement</option>
             </select>
           </div>
 
