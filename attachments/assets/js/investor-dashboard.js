@@ -482,6 +482,30 @@ async function loadEntityLeases(entityId) {
   }).join('');
 }
 
+// documents.file_url is never actually populated (only storage_path is) —
+// the "documents" bucket is private, so a raw storage_path can't be used
+// as a direct href the way partner_invoices/statements' file_url can (those
+// get a real long-lived signed URL copied in at Approval time). Every
+// document-table download link needs an on-demand signed URL instead,
+// same pattern already proven working in tenant-dashboard.js.
+function wireDocDownloadButtons(container) {
+  if (!container) return;
+  container.querySelectorAll('[data-doc-download]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newTab = window.open('', '_blank');
+      const { data, error } = await supabaseClient
+        .storage.from('documents').createSignedUrl(btn.dataset.docPath, 300);
+      if (error) {
+        if (newTab) newTab.close();
+        alert('Could not open file: ' + error.message);
+        return;
+      }
+      if (newTab) newTab.location.href = data.signedUrl;
+      else window.location.href = data.signedUrl;
+    });
+  });
+}
+
 async function loadEntityInvoices(entityId) {
   const { data: props } = await supabaseClient.from('properties').select('id').eq('investor_entity_id', entityId);
   const propertyIds = (props || []).map(p => p.id);
@@ -503,11 +527,12 @@ async function loadEntityInvoices(entityId) {
         <span class="text-navy font-medium block">${d.statement_month ? new Date(d.statement_month).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) : d.document_date}</span>
         <span class="text-xs text-gray-500">R${Number(d.total_amount || 0).toLocaleString()}</span>
       </div>
-      ${d.file_url || d.storage_path
-        ? `<a href="${d.file_url || d.storage_path}" target="_blank" rel="noopener" class="learn-more">Download →</a>`
+      ${d.storage_path
+        ? `<button data-doc-download="${d.id}" data-doc-path="${d.storage_path}" class="learn-more">Download →</button>`
         : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
     </div>
   `).join('');
+  wireDocDownloadButtons(container);
 }
 
 async function loadEntityInspections(entityId) {
@@ -528,11 +553,12 @@ async function loadEntityInspections(entityId) {
   container.innerHTML = docs.map(d => `
     <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <span class="text-navy font-medium">${d.generated_filename || d.original_filename || 'Inspection Report'}</span>
-      ${d.file_url || d.storage_path
-        ? `<a href="${d.file_url || d.storage_path}" target="_blank" rel="noopener" class="learn-more">Download →</a>`
+      ${d.storage_path
+        ? `<button data-doc-download="${d.id}" data-doc-path="${d.storage_path}" class="learn-more">Download →</button>`
         : '<span class="text-xs text-gray-400 italic">No document attached</span>'}
     </div>
   `).join('');
+  wireDocDownloadButtons(container);
 }
 
 async function loadEntityMaintenance(entityId) {
