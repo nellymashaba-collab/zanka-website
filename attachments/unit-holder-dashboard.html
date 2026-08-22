@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unit Holder Portal | Zanka Group</title>
+<meta name="description" content="Unit Holder portal for Zanka Group fractional property investors.">
+<meta name="robots" content="noindex, follow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#1F2A44',
+            'navy-deep': '#141C30',
+            gold: '#C89B3C',
+            'gold-light': '#E4C77A',
+            offwhite: '#F4F4F4'
+          },
+          fontFamily: {
+            display: ['Playfair Display', 'Georgia', 'serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+
+</head>
+<body class="bg-white antialiased">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between">
+    <a href="index.html" class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+      <span class="leading-none">
+        <span class="block font-display font-bold text-navy text-lg tracking-tight">ZANKA</span>
+        <span class="block text-[10px] tracking-[0.25em] text-gray-500 font-semibold">GROUP</span>
+      </span>
+    </a>
+    <div class="flex items-center gap-4">
+      <span class="hidden sm:block text-sm text-gray-500">Welcome, <span data-holder-name class="font-semibold text-navy"></span></span>
+      <button data-logout class="btn btn-outline-navy !py-2 !px-4 text-sm">Log Out</button>
+    </div>
+  </div>
+</header><main id="main">
+
+<section class="bg-offwhite py-10 md:py-14">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8">
+    <p class="eyebrow mb-2">Unit Holder Portal</p>
+    <h1 class="font-display font-bold text-navy text-3xl sm:text-4xl mb-8">Your Unit Holdings</h1>
+
+    <!-- KYC status banner -->
+    <div id="kyc-banner" class="hidden card p-5 mb-8 border-2 border-gold flex items-start gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-gold flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+      <div>
+        <p id="kyc-banner-text" class="text-sm font-semibold text-navy mb-1"></p>
+        <p id="kyc-banner-subtext" class="text-sm text-gray-500"></p>
+      </div>
+    </div>
+
+    <!-- KYC submission form — shown only if no submission exists yet -->
+    <div id="kyc-submit-card" class="hidden card p-6 mb-8">
+      <h2 class="font-display font-semibold text-navy text-lg mb-1">Submit KYC Documents</h2>
+      <p class="text-sm text-gray-500 mb-5">Required once before your first unit purchase can be recorded. An admin reviews submissions manually.</p>
+      <form id="kyc-submit-form" class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="field-label" for="kyc-id-file">ID Document</label>
+          <input class="field" type="file" id="kyc-id-file" accept="application/pdf,image/*" required>
+        </div>
+        <div>
+          <label class="field-label" for="kyc-address-file">Proof of Address</label>
+          <input class="field" type="file" id="kyc-address-file" accept="application/pdf,image/*" required>
+        </div>
+        <div class="sm:col-span-2">
+          <button type="submit" id="kyc-submit-btn" class="btn btn-primary !py-2.5">Submit for Review</button>
+        </div>
+      </form>
+      <p id="kyc-submit-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      <p id="kyc-submit-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+    </div>
+
+    <!-- Summary -->
+    <div class="grid sm:grid-cols-3 gap-6 mb-10">
+      <div class="card p-6">
+        <p class="text-sm text-gray-500 mb-1">Total Units Held</p>
+        <p id="stat-total-units" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+      </div>
+      <div class="card p-6">
+        <p class="text-sm text-gray-500 mb-1">Total Invested</p>
+        <p id="stat-total-invested" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+      </div>
+      <div class="card p-6">
+        <p class="text-sm text-gray-500 mb-1">Properties Held</p>
+        <p id="stat-properties-held" class="font-display font-bold text-navy text-2xl">&mdash;</p>
+      </div>
+    </div>
+
+    <!-- Holdings -->
+    <div class="card p-6 mb-8">
+      <h2 class="font-display font-semibold text-navy text-lg mb-3">Your Holdings</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+              <th class="py-2 px-3 font-semibold">Property</th>
+              <th class="py-2 px-3 font-semibold">Units</th>
+              <th class="py-2 px-3 font-semibold">Ownership %</th>
+              <th class="py-2 px-3 font-semibold">Purchase Amount</th>
+              <th class="py-2 px-3 font-semibold">Purchase Date</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Distribution history -->
+    <div class="card p-6 mb-8">
+      <h2 class="font-display font-semibold text-navy text-lg mb-3">Distribution History</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+              <th class="py-2 px-3 font-semibold">Property</th>
+              <th class="py-2 px-3 font-semibold">Period</th>
+              <th class="py-2 px-3 font-semibold">Units at Run</th>
+              <th class="py-2 px-3 font-semibold">Amount</th>
+              <th class="py-2 px-3 font-semibold">Status</th>
+              <th class="py-2 px-3 font-semibold">Paid Date</th>
+            </tr>
+          </thead>
+          <tbody id="distributions-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Documents -->
+    <div class="card p-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-3">Documents</h2>
+      <div id="documents-list" class="space-y-2"></div>
+      <p id="documents-empty" class="hidden text-sm text-gray-400">Nothing to show yet.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/unit-holder-dashboard.js"></script>
+</body>
+</html>
