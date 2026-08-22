@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireInvoiceGenerateForm();
   await loadApprovalGrid();
   wireRejectModal();
+  await initUnitsManagement();
 });
 
 /* ---------------- Sidebar section switching ---------------- */
@@ -398,6 +399,419 @@ function wireReportsExportForm() {
       btn.textContent = originalText;
     }
   });
+}
+
+/* ================================================================
+   UNITS — fractional ownership. Kept entirely separate from the
+   existing "Investor" concept (investor_entities = a company/trust
+   that owns a whole property outright). A Unit Holder owns a % stake
+   in a property's SPV; the SPV itself is set up as a normal
+   investor_entities row and linked here via unit_offerings.
+   ================================================================ */
+
+async function initUnitsManagement() {
+  await loadUnitsOfferingSelects();
+  wireCreateOfferingForm();
+  await loadOfferingsTable();
+  await loadHoldersForSelect();
+  wireRecordPurchaseForm();
+  await loadHoldingsTable();
+  await loadKycQueue();
+  wireDistributionForm();
+  await loadPayoutsRunSelect();
+  wireMarkPayoutPaid();
+}
+
+// Shared by the Create Offering form (properties + SPV entities) and
+// every other Units select that needs a live list of offerings.
+async function loadUnitsOfferingSelects() {
+  const propertySelect = document.getElementById('units-offering-property');
+  const entitySelect = document.getElementById('units-offering-entity');
+  if (propertySelect) {
+    const { data: properties } = await supabaseClient.from('properties').select('id, address').order('address');
+    propertySelect.innerHTML = '<option value="">Select a property</option>' +
+      (properties || []).map(p => `<option value="${p.id}">${p.address}</option>`).join('');
+  }
+  if (entitySelect) {
+    const { data: entities } = await supabaseClient.from('investor_entities').select('id, entity_name').order('entity_name');
+    entitySelect.innerHTML = '<option value="">Select the SPV entity</option>' +
+      (entities || []).map(e => `<option value="${e.id}">${e.entity_name}</option>`).join('');
+  }
+}
+
+async function getOfferingsList() {
+  const { data, error } = await supabaseClient
+    .from('unit_offerings')
+    .select('id, total_units, unit_price, status, properties:property_id ( address ), investor_entities:investor_entity_id ( entity_name )')
+    .order('created_at', { ascending: false });
+  if (error) { console.error('Could not load offerings:', error.message); return []; }
+  return data || [];
+}
+
+function wireCreateOfferingForm() {
+  const form = document.getElementById('units-offering-form');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('units-offering-error');
+    const successEl = document.getElementById('units-offering-success');
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    const propertyId = document.getElementById('units-offering-property').value;
+    const entityId = document.getElementById('units-offering-entity').value;
+    const totalUnits = Number(document.getElementById('units-offering-total-units').value);
+    const unitPrice = Number(document.getElementById('units-offering-unit-price').value);
+    const minInvestment = document.getElementById('units-offering-min').value || null;
+    const maxInvestment = document.getElementById('units-offering-max').value || null;
+
+    if (!propertyId || !entityId || !totalUnits || !unitPrice) {
+      errorEl.textContent = 'Property, SPV entity, total units and unit price are all required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    const { error } = await supabaseClient.from('unit_offerings').insert([{
+      property_id: propertyId,
+      investor_entity_id: entityId,
+      total_units: totalUnits,
+      unit_price: unitPrice,
+      min_investment: minInvestment,
+      max_investment: maxInvestment,
+      status: 'draft',
+      created_by: currentAdmin.id,
+    }]);
+
+    if (error) {
+      errorEl.textContent = error.message;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    successEl.textContent = 'Offering created as Draft. Open it from the table below when ready to accept purchases.';
+    successEl.classList.remove('hidden');
+    form.reset();
+    await loadOfferingsTable();
+    await populatePurchaseAndDistributionOfferingSelects();
+  });
+}
+
+async function loadOfferingsTable() {
+  const tbody = document.getElementById('units-offerings-tbody');
+  if (!tbody) return;
+  const offerings = await getOfferingsList();
+
+  if (offerings.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-4 px-3 text-sm text-gray-400">No offerings yet.</td></tr>';
+  } else {
+    tbody.innerHTML = offerings.map(o => {
+      const statusColor = o.status === 'open' ? 'bg-green-100 text-green-700' : o.status === 'funded' ? 'bg-navy/10 text-navy' : o.status === 'closed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700';
+      const nextAction = o.status === 'open'
+        ? `<button data-offering-close="${o.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition">Close</button>`
+        : `<button data-offering-open="${o.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition">Open</button>`;
+      return `
+        <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition text-sm">
+          <td class="py-3 px-3">${o.properties?.address || '—'}</td>
+          <td class="py-3 px-3">${o.investor_entities?.entity_name || '—'}</td>
+          <td class="py-3 px-3">${o.total_units}</td>
+          <td class="py-3 px-3">R${Number(o.unit_price).toLocaleString()}</td>
+          <td class="py-3 px-3"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}">${o.status}</span></td>
+          <td class="py-3 px-3">${nextAction}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  tbody.querySelectorAll('[data-offering-open]').forEach(btn => {
+    btn.addEventListener('click', () => setOfferingStatus(btn.dataset.offeringOpen, 'open'));
+  });
+  tbody.querySelectorAll('[data-offering-close]').forEach(btn => {
+    btn.addEventListener('click', () => setOfferingStatus(btn.dataset.offeringClose, 'closed'));
+  });
+}
+
+async function setOfferingStatus(offeringId, status) {
+  const patch = { status };
+  if (status === 'open') patch.opened_at = new Date().toISOString();
+  if (status === 'closed') patch.closed_at = new Date().toISOString();
+  const { error } = await supabaseClient.from('unit_offerings').update(patch).eq('id', offeringId);
+  if (error) { alert('Could not update: ' + error.message); return; }
+  await loadOfferingsTable();
+  await populatePurchaseAndDistributionOfferingSelects();
+}
+
+// Populates the offering dropdowns used by Record Purchase and Run a
+// Distribution — called after any offering create/status change so a
+// newly-opened offering shows up immediately without a page reload.
+async function populatePurchaseAndDistributionOfferingSelects() {
+  const offerings = await getOfferingsList();
+  const label = (o) => `${o.properties?.address || 'Property'} — ${o.investor_entities?.entity_name || 'SPV'} (${o.status})`;
+  const options = '<option value="">Select an offering</option>' +
+    offerings.map(o => `<option value="${o.id}">${label(o)}</option>`).join('');
+
+  const purchaseSelect = document.getElementById('units-purchase-offering');
+  if (purchaseSelect) purchaseSelect.innerHTML = options;
+
+  const distributionSelect = document.getElementById('units-distribution-offering');
+  if (distributionSelect) distributionSelect.innerHTML = options;
+}
+
+async function loadHoldersForSelect() {
+  await populatePurchaseAndDistributionOfferingSelects();
+  const holderSelect = document.getElementById('units-purchase-holder');
+  if (!holderSelect) return;
+  const { data: profiles } = await supabaseClient.from('profiles').select('id, full_name, email').order('full_name');
+  holderSelect.innerHTML = '<option value="">Select a profile</option>' +
+    (profiles || []).map(p => `<option value="${p.id}">${p.full_name || p.email}</option>`).join('');
+}
+
+function wireRecordPurchaseForm() {
+  const form = document.getElementById('units-purchase-form');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('units-purchase-error');
+    const successEl = document.getElementById('units-purchase-success');
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    const offeringId = document.getElementById('units-purchase-offering').value;
+    const holderId = document.getElementById('units-purchase-holder').value;
+    const units = Number(document.getElementById('units-purchase-units').value);
+    const amount = Number(document.getElementById('units-purchase-amount').value);
+    const purchaseDate = document.getElementById('units-purchase-date').value;
+
+    if (!offeringId || !holderId || !units || !amount || !purchaseDate) {
+      errorEl.textContent = 'All fields are required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    const { error } = await supabaseClient.from('unit_holdings').insert([{
+      offering_id: offeringId,
+      holder_profile_id: holderId,
+      units_held: units,
+      purchase_amount: amount,
+      purchase_date: purchaseDate,
+      status: 'active',
+      created_by: currentAdmin.id,
+    }]);
+
+    if (error) {
+      errorEl.textContent = error.message;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    successEl.textContent = 'Purchase recorded and posted to the ledger.';
+    successEl.classList.remove('hidden');
+    form.reset();
+    await loadHoldingsTable();
+  });
+}
+
+async function loadHoldingsTable() {
+  const tbody = document.getElementById('units-holdings-tbody');
+  if (!tbody) return;
+
+  const { data, error } = await supabaseClient
+    .from('unit_holdings')
+    .select('id, units_held, purchase_amount, purchase_date, status, posting_error, unit_offerings:offering_id ( properties:property_id ( address ) ), profiles:holder_profile_id ( full_name )')
+    .order('purchase_date', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-4 px-3 text-sm text-gray-400">No unit purchases recorded yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(h => `
+    <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition text-sm">
+      <td class="py-3 px-3">${h.unit_offerings?.properties?.address || '—'}</td>
+      <td class="py-3 px-3">${h.profiles?.full_name || '—'}</td>
+      <td class="py-3 px-3">${h.units_held}</td>
+      <td class="py-3 px-3">R${Number(h.purchase_amount).toLocaleString()}</td>
+      <td class="py-3 px-3">${h.purchase_date}</td>
+      <td class="py-3 px-3">${h.posting_error
+        ? `<span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700" title="${h.posting_error}">Posting failed</span>`
+        : `<span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700">${h.status}</span>`}</td>
+    </tr>`).join('');
+}
+
+async function loadKycQueue() {
+  const tbody = document.getElementById('units-kyc-tbody');
+  if (!tbody) return;
+
+  const { data, error } = await supabaseClient
+    .from('unit_holder_kyc')
+    .select('id, status, created_at, profiles:profile_id ( full_name, email )')
+    .order('created_at', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-400">No KYC submissions yet.</td></tr>';
+    return;
+  }
+
+  const statusColor = { pending: 'bg-yellow-100 text-yellow-700', approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700' };
+
+  tbody.innerHTML = data.map(k => `
+    <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition text-sm">
+      <td class="py-3 px-3">${k.profiles?.full_name || '—'}</td>
+      <td class="py-3 px-3">${k.profiles?.email || '—'}</td>
+      <td class="py-3 px-3"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor[k.status] || ''}">${k.status}</span></td>
+      <td class="py-3 px-3">${new Date(k.created_at).toLocaleDateString('en-ZA')}</td>
+      <td class="py-3 px-3">${k.status === 'pending' ? `
+        <button data-kyc-approve="${k.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition mr-1.5">Approve</button>
+        <button data-kyc-reject="${k.id}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition">Reject</button>
+      ` : '—'}</td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('[data-kyc-approve]').forEach(btn => {
+    btn.addEventListener('click', () => reviewKyc(btn.dataset.kycApprove, 'approved'));
+  });
+  tbody.querySelectorAll('[data-kyc-reject]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const notes = prompt('Reason for rejecting this KYC submission (optional):') || null;
+      reviewKyc(btn.dataset.kycReject, 'rejected', notes);
+    });
+  });
+}
+
+async function reviewKyc(kycId, status, notes) {
+  const { error } = await supabaseClient.from('unit_holder_kyc').update({
+    status, notes, reviewed_by: currentAdmin.id, reviewed_at: new Date().toISOString(),
+  }).eq('id', kycId);
+  if (error) { alert('Could not update: ' + error.message); return; }
+  await loadKycQueue();
+}
+
+function wireDistributionForm() {
+  const inputs = document.querySelectorAll('.distribution-financial-input');
+  const netEl = document.getElementById('units-distribution-net');
+  const recalc = () => {
+    if (!netEl) return;
+    const gross = Number(document.getElementById('units-distribution-gross')?.value || 0);
+    const mortgage = Number(document.getElementById('units-distribution-mortgage')?.value || 0);
+    const fee = Number(document.getElementById('units-distribution-fee')?.value || 0);
+    netEl.textContent = 'R' + (gross - mortgage - fee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  inputs.forEach(el => el.addEventListener('input', recalc));
+
+  const form = document.getElementById('units-distribution-form');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('units-distribution-error');
+    const successEl = document.getElementById('units-distribution-success');
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    const offeringId = document.getElementById('units-distribution-offering').value;
+    const periodLabel = document.getElementById('units-distribution-period').value.trim();
+    const gross = Number(document.getElementById('units-distribution-gross').value || 0);
+    const mortgage = Number(document.getElementById('units-distribution-mortgage').value || 0);
+    const fee = Number(document.getElementById('units-distribution-fee').value || 0);
+    const runDate = document.getElementById('units-distribution-date').value;
+
+    if (!offeringId || !periodLabel || !runDate) {
+      errorEl.textContent = 'Offering, period label and run date are all required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    const { error } = await supabaseClient.rpc('create_distribution_run', {
+      p_offering_id: offeringId,
+      p_period_label: periodLabel,
+      p_gross_rental_income: gross,
+      p_mortgage_service_deducted: mortgage,
+      p_management_fee_deducted: fee,
+      p_run_date: runDate,
+      p_created_by: currentAdmin.id,
+    });
+
+    if (error) {
+      errorEl.textContent = error.message;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    successEl.textContent = `Distribution declared for ${periodLabel} and posted to the ledger.`;
+    successEl.classList.remove('hidden');
+    form.reset();
+    if (netEl) netEl.textContent = 'R0.00';
+    await loadPayoutsRunSelect();
+  });
+}
+
+async function loadPayoutsRunSelect() {
+  const select = document.getElementById('units-payouts-run');
+  if (!select) return;
+
+  const { data, error } = await supabaseClient
+    .from('distribution_runs')
+    .select('id, period_label, run_date, unit_offerings:offering_id ( properties:property_id ( address ) )')
+    .order('run_date', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    select.innerHTML = '<option value="">No distribution runs yet</option>';
+    document.getElementById('units-payouts-tbody').innerHTML = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-400">No distribution runs yet.</td></tr>';
+    return;
+  }
+
+  select.innerHTML = data.map(r => `<option value="${r.id}">${r.unit_offerings?.properties?.address || 'Property'} — ${r.period_label}</option>`).join('');
+  select.addEventListener('change', () => loadPayoutsTable(select.value));
+  await loadPayoutsTable(select.value);
+}
+
+async function loadPayoutsTable(runId) {
+  const tbody = document.getElementById('units-payouts-tbody');
+  if (!tbody || !runId) return;
+
+  const { data, error } = await supabaseClient
+    .from('distribution_payouts')
+    .select('id, units_held_snapshot, amount, status, payment_reference, profiles:holder_profile_id ( full_name )')
+    .eq('distribution_run_id', runId)
+    .order('amount', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="py-4 px-3 text-sm text-gray-400">No payouts for this run.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(p => `
+    <tr class="border-b border-gray-100 hover:bg-gray-50/50 transition text-sm">
+      <td class="py-3 px-3">${p.profiles?.full_name || '—'}</td>
+      <td class="py-3 px-3">${p.units_held_snapshot}</td>
+      <td class="py-3 px-3">R${Number(p.amount).toLocaleString()}</td>
+      <td class="py-3 px-3"><span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${p.status === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${p.status}</span></td>
+      <td class="py-3 px-3">${p.status === 'Pending'
+        ? `<button data-payout-pay="${p.id}" data-payout-amount="${p.amount}" data-payout-holder="${p.profiles?.full_name || 'this holder'}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700 transition">Mark as Paid (EFT)</button>`
+        : (p.payment_reference || '—')}</td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('[data-payout-pay]').forEach(btn => {
+    btn.addEventListener('click', () => markPayoutPaid(btn.dataset.payoutPay, btn.dataset.payoutAmount, btn.dataset.payoutHolder));
+  });
+}
+
+function wireMarkPayoutPaid() {
+  // Delegation is handled per-render in loadPayoutsTable since rows are
+  // rebuilt on every load — this function exists as the init entry point
+  // for symmetry with the rest of the module.
+}
+
+async function markPayoutPaid(payoutId, amount, holderName) {
+  const confirmed = confirm(`Confirm R${Number(amount).toLocaleString()} to ${holderName} was paid via EFT and mark it Paid? This posts it to the ledger immediately.`);
+  if (!confirmed) return;
+  const reference = prompt('Payment reference (optional):') || null;
+
+  const { error } = await supabaseClient.from('distribution_payouts').update({
+    status: 'Paid',
+    paid_date: new Date().toISOString().slice(0, 10),
+    payment_reference: reference,
+  }).eq('id', payoutId);
+
+  if (error) { alert('Could not update: ' + error.message); return; }
+  const runSelect = document.getElementById('units-payouts-run');
+  if (runSelect) await loadPayoutsTable(runSelect.value);
 }
 
 // Resolves the effective owner id for a batch of properties at once
