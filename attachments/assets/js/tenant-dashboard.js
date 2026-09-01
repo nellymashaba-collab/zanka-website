@@ -105,6 +105,7 @@ async function loadTenantData(tenantId) {
     .select('*')
     .eq('tenant_id', tenantId)
     .eq('status', 'Approved')
+    .neq('category', 'Levy Statement') // owner-only — a tenant_id can still be set here (e.g. the levy recharge feature), so exclude explicitly rather than relying on tenant_id alone
     .order('created_at', { ascending: false });
 
   const invoicesList = document.getElementById('tenant-invoices-list');
