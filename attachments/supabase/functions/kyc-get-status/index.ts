@@ -1,8 +1,9 @@
 // supabase/functions/kyc-get-status/index.ts
 // Deploy with: supabase functions deploy kyc-get-status
 //
-// Input: { kyc_case_id: uuid } OR { application_id: uuid } (a leases.id —
-// looks up that lease's most recent KYC case). application_id exists
+// Input: { kyc_case_id: uuid } OR { application_id: number } (a leases.id —
+// leases.id is bigint on this database, not uuid — looks up that lease's
+// most recent KYC case). application_id exists
 // because owners have no direct RLS read on kyc_cases (by design — see
 // 022_kyc_module.sql), so the owner dashboard has no other way to learn
 // a case's id before asking for its status. Returns null (not 404) when
@@ -43,7 +44,7 @@ Deno.serve(async (req) => {
   const { data: { user } } = await supabaseAsCaller.auth.getUser();
   if (!user) return json({ error: 'Not authenticated' }, 401);
 
-  let body: { kyc_case_id?: string; application_id?: string };
+  let body: { kyc_case_id?: string; application_id?: number };
   try { body = await req.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
   if (!body.kyc_case_id && !body.application_id) return json({ error: 'kyc_case_id or application_id is required' }, 400);
 

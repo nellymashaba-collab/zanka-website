@@ -1,7 +1,7 @@
 // supabase/functions/kyc-create-case/index.ts
 // Deploy with: supabase functions deploy kyc-create-case
 //
-// Input: { application_id: uuid (a Draft lease id), tenant_id: uuid, requested_checks: string[] }
+// Input: { application_id: number (a Draft lease id — leases.id is bigint on this database, not uuid), tenant_id: uuid, requested_checks: string[] }
 // Creates the kyc_cases row plus one kyc_checks row per requested check
 // type, both starting in a pending state. Nothing is called out to a
 // provider yet — that happens per-check in kyc-start-check, only once
@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
   const { data: { user } } = await supabaseAsCaller.auth.getUser();
   if (!user) return json({ error: 'Not authenticated' }, 401);
 
-  let body: { application_id?: string; tenant_id?: string; requested_checks?: string[] };
+  let body: { application_id?: number; tenant_id?: string; requested_checks?: string[] };
   try { body = await req.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
 
   const { application_id, tenant_id, requested_checks } = body;
