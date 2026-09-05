@@ -89,6 +89,10 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 9.5h.008M12 9.5h.008M15 9.5h.008M9 13h.008M15 13h.008"/></svg>
         <span>Units</span>
       </button>
+      <button data-section-link="compliance" class="section-link w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+        <span>Compliance</span>
+      </button>
       <a href="lease-dashboard.html" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition text-left">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6M9 8h6M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/></svg>
         <span>Leases</span>
@@ -432,6 +436,157 @@
         </div>
       </div>
     </section>
+
+    <!-- COMPLIANCE (KYC / tenant screening) -->
+    <section data-section="compliance" class="p-5 sm:p-8 hidden">
+      <p class="eyebrow mb-2">KYC &amp; Tenant Screening</p>
+      <h1 class="font-display font-bold text-navy text-3xl mb-6">Compliance</h1>
+
+      <div class="flex flex-wrap gap-2 mb-6">
+        <button data-compliance-tab="applications" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-navy text-white">KYC Applications</button>
+        <button data-compliance-tab="pending" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">Pending Review</button>
+        <button data-compliance-tab="completed" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">Completed</button>
+        <button data-compliance-tab="high_risk" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">High Risk</button>
+        <button data-compliance-tab="documents" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">Documents</button>
+        <button data-compliance-tab="audit" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">Audit Log</button>
+        <button data-compliance-tab="settings" class="compliance-tab text-sm font-semibold px-4 py-2 rounded-full bg-gray-100 text-gray-600">Settings</button>
+      </div>
+
+      <!-- Applications / Pending / Completed / High Risk all share one table, filtered client-side -->
+      <div data-compliance-panel="applications" class="card p-6">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-3 font-semibold">Applicant</th>
+                <th class="py-2 px-3 font-semibold">Property</th>
+                <th class="py-2 px-3 font-semibold">Application Date</th>
+                <th class="py-2 px-3 font-semibold">KYC Status</th>
+                <th class="py-2 px-3 font-semibold">Credit</th>
+                <th class="py-2 px-3 font-semibold">Affordability</th>
+                <th class="py-2 px-3 font-semibold">Risk</th>
+                <th class="py-2 px-3 font-semibold">Review</th>
+                <th class="py-2 px-3 font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-applications-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-compliance-panel="documents" class="card p-6 hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-3 font-semibold">Applicant</th>
+                <th class="py-2 px-3 font-semibold">Document Type</th>
+                <th class="py-2 px-3 font-semibold">File</th>
+                <th class="py-2 px-3 font-semibold">Uploaded</th>
+                <th class="py-2 px-3 font-semibold">Status</th>
+                <th class="py-2 px-3 font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-documents-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-compliance-panel="audit" class="card p-6 hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+                <th class="py-2 px-3 font-semibold">When</th>
+                <th class="py-2 px-3 font-semibold">Applicant</th>
+                <th class="py-2 px-3 font-semibold">Event</th>
+                <th class="py-2 px-3 font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-audit-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-compliance-panel="settings" class="card p-6 hidden">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Compliance Settings</h2>
+        <p class="text-sm text-gray-500 mb-5">Changes apply to every new check started after saving — nothing here is hardcoded into the frontend.</p>
+        <form id="compliance-settings-form" class="space-y-5">
+          <div class="max-w-sm">
+            <label class="field-label" for="cs-provider">Provider</label>
+            <input class="field" type="text" id="cs-provider" placeholder="placeholder">
+          </div>
+          <div>
+            <p class="field-label mb-2">Enabled checks</p>
+            <div class="grid sm:grid-cols-3 gap-2" id="cs-enabled-checks">
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="identity"> Identity</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="id_document"> ID Document</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="face_match"> Face Match</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="liveness"> Liveness</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="bank_account"> Bank</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="credit"> Credit</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="aml"> AML</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="pep"> PEP</label>
+              <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" data-check="sanctions"> Sanctions</label>
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4 max-w-lg">
+            <div>
+              <label class="field-label" for="cs-low-max">Risk threshold — LOW max score</label>
+              <input class="field" type="number" min="0" max="100" id="cs-low-max">
+            </div>
+            <div>
+              <label class="field-label" for="cs-medium-max">Risk threshold — MEDIUM max score</label>
+              <input class="field" type="number" min="0" max="100" id="cs-medium-max">
+            </div>
+          </div>
+          <label class="flex items-center gap-2.5 text-sm text-gray-700">
+            <input type="checkbox" id="cs-require-manual-review"> Require manual review before any auto-approval
+          </label>
+          <label class="flex items-center gap-2.5 text-sm text-gray-700">
+            <input type="checkbox" id="cs-require-kyc-before-lease"> Require KYC completion before a lease can be sent for signature
+          </label>
+          <div class="grid sm:grid-cols-3 gap-4 max-w-2xl border-t border-gray-100 pt-4">
+            <div>
+              <label class="field-label" for="cs-doc-retention">Document retention (days)</label>
+              <input class="field" type="number" min="0" id="cs-doc-retention" placeholder="Not yet set">
+            </div>
+            <div>
+              <label class="field-label" for="cs-record-retention">KYC record retention (days)</label>
+              <input class="field" type="number" min="0" id="cs-record-retention" placeholder="Not yet set">
+            </div>
+            <div>
+              <label class="field-label" for="cs-audit-retention">Audit log retention (days)</label>
+              <input class="field" type="number" min="0" id="cs-audit-retention" placeholder="Not yet set">
+            </div>
+          </div>
+          <p class="text-xs text-gray-400">Retention periods left blank must be reviewed against Zanka's legal/privacy requirements before production use — nothing here defaults to a legal assumption.</p>
+          <button type="submit" class="btn btn-primary !py-2.5">Save Settings</button>
+        </form>
+        <p id="cs-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="cs-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+    </section>
+
+    <!-- COMPLIANCE: application detail modal -->
+    <div id="compliance-detail-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-display font-semibold text-navy text-xl">Application Detail</h2>
+          <button id="compliance-detail-close" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div id="compliance-detail-body" class="space-y-4 text-sm"></div>
+        <div class="flex flex-wrap gap-2 mt-5 pt-4 border-t border-gray-100">
+          <button id="compliance-approve-btn" class="text-xs font-semibold px-4 py-2 rounded-full bg-green-600 text-white hover:bg-green-700 transition">Approve Tenant</button>
+          <button id="compliance-request-info-btn" class="text-xs font-semibold px-4 py-2 rounded-full bg-yellow-500 text-white hover:bg-yellow-600 transition">Request Information</button>
+          <button id="compliance-escalate-btn" class="text-xs font-semibold px-4 py-2 rounded-full bg-navy text-white hover:bg-navy-deep transition">Send for Review</button>
+          <button id="compliance-decline-btn" class="text-xs font-semibold px-4 py-2 rounded-full bg-red-600 text-white hover:bg-red-700 transition">Decline Application</button>
+          <button id="compliance-request-doc-btn" class="text-xs font-semibold px-4 py-2 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 transition">Request Document</button>
+        </div>
+        <p id="compliance-detail-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="compliance-detail-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+    </div>
 
     <!-- DOCUMENTS -->
     <section data-section="documents" class="p-5 sm:p-8 hidden">

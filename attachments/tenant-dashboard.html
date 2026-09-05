@@ -62,6 +62,49 @@
       <div id="pending-signatures-list"></div>
     </div>
 
+    <!-- KYC / tenant screening — hidden unless a KYC case actually exists
+         for this tenant (e.g. an existing tenant from before this module
+         shouldn't see an irrelevant compliance widget). -->
+    <div id="kyc-status-card" class="card p-6 mb-6 border-2 border-gold hidden">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-display font-semibold text-navy text-lg">Verification Status</h2>
+        <span id="kyc-status-badge" class="text-xs font-semibold px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700">&mdash;</span>
+      </div>
+      <p id="kyc-status-subtext" class="text-sm text-gray-500 mb-4"></p>
+
+      <!-- Consent step -->
+      <div id="kyc-consent-block" class="hidden space-y-3">
+        <p class="text-sm text-gray-600">Before we can verify your application, we need your consent to run the following checks. This is required by law and protects both you and Zanka Group.</p>
+        <label class="flex items-start gap-2.5 text-sm text-gray-700">
+          <input type="checkbox" id="kyc-consent-identity" class="mt-1">
+          <span>I consent to <strong>identity verification</strong> (confirming who I am using my ID document).</span>
+        </label>
+        <label class="flex items-start gap-2.5 text-sm text-gray-700">
+          <input type="checkbox" id="kyc-consent-credit" class="mt-1">
+          <span>I consent to <strong>credit and background screening</strong> as part of my rental application.</span>
+        </label>
+        <label class="flex items-start gap-2.5 text-sm text-gray-700">
+          <input type="checkbox" id="kyc-consent-data" class="mt-1">
+          <span>I consent to my personal information being <strong>processed</strong> for the purpose of this application, in line with Zanka Group's privacy policy.</span>
+        </label>
+        <button id="kyc-start-verification-btn" class="btn btn-primary !py-2.5" disabled>Start Verification</button>
+        <p id="kyc-consent-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5"></p>
+      </div>
+
+      <!-- In-progress checklist -->
+      <div id="kyc-checks-block" class="hidden space-y-2"></div>
+
+      <!-- Action required (document upload) -->
+      <div id="kyc-action-block" class="hidden">
+        <p class="text-sm font-semibold text-navy mb-2">Action Required</p>
+        <p id="kyc-action-message" class="text-sm text-gray-500 mb-3"></p>
+        <input type="file" id="kyc-upload-input" class="field" accept="application/pdf,image/*">
+        <button id="kyc-upload-btn" class="btn btn-primary !py-2.5 mt-3">Upload Document</button>
+        <p id="kyc-upload-error" class="hidden text-sm text-red-600 bg-red-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+        <p id="kyc-upload-success" class="hidden text-sm text-green-700 bg-green-50 rounded-lg py-2.5 px-3.5 mt-3"></p>
+      </div>
+    </div>
+
     <div class="grid sm:grid-cols-3 gap-6 mb-10">
       <button id="pay-rent-btn" class="card p-6 text-left hover:border-gold border border-transparent">
         <div class="icon-badge mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="9" r="6"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12.5a6 6 0 1 1 0-6"/></svg></div>
