@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadApprovalGrid();
   wireRejectModal();
   await initUnitsManagement();
+  await initComplianceManagement();
 });
 
 /* ---------------- Sidebar section switching ---------------- */
@@ -2954,5 +2955,475 @@ async function initQuickLinkForm() {
 
     // Also update the property's occupancy status, since it now has a tenant.
     await supabaseClient.from('properties').update({ occupancy_status: 'Occupied' }).eq('id', propertyId);
+  });
+}
+/* =====================================================================
+   COMPLIANCE — KYC & Tenant Screening admin console
+   All reads here go straight to the kyc_* tables via RLS (admin policies
+   already grant full access — no edge function needed for viewing).
+   Actions that carry business logic (approve/decline/request info/
+   request document/recompute risk) go through the matching Edge
+   Function so the audit trail and state-machine rules stay centralized
+   in one place instead of being duplicated in frontend JS.
+   ===================================================================== */
+
+let complianceCasesCache = [];
+let complianceActiveTab = 'applications';
+let complianceDetailCaseId = null;
+
+async function callAdminKycFunction(name, payload) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${name} failed (${res.status})`);
+  return body;
+}
+
+async function initComplianceManagement() {
+  const section = document.querySelector('[data-section="compliance"]');
+  if (!section) return; // section not present on this page
+
+  wireComplianceTabs();
+  wireComplianceDetailModal();
+  wireComplianceSettingsForm();
+
+  await loadComplianceApplications();
+  await loadComplianceDocuments();
+  await loadComplianceAuditLog();
+  await loadComplianceSettings();
+}
+
+function wireComplianceTabs() {
+  const tabs = document.querySelectorAll('.compliance-tab');
+  const panels = document.querySelectorAll('[data-compliance-panel]');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      complianceActiveTab = tab.dataset.complianceTab;
+      tabs.forEach(t => {
+        const active = t === tab;
+        t.classList.toggle('bg-navy', active);
+        t.classList.toggle('text-white', active);
+        t.classList.toggle('bg-gray-100', !active);
+        t.classList.toggle('text-gray-600', !active);
+      });
+      // applications / pending / completed / high_risk all share the one
+      // "applications" panel, just filtered differently.
+      const panelKey = ['pending', 'completed', 'high_risk'].includes(complianceActiveTab) ? 'applications' : complianceActiveTab;
+      panels.forEach(p => p.classList.toggle('hidden', p.dataset.compliancePanel !== panelKey));
+      renderComplianceApplicationsTable();
+    });
+  });
+}
+
+/* ---------------- Applications list ---------------- */
+
+async function loadComplianceApplications() {
+  const { data: cases, error } = await supabaseClient
+    .from('kyc_cases')
+    .select(`
+      id, status, risk_level, overall_result, review_required, created_at, completed_at,
+      tenant_id, property_id, application_id,
+      tenant:profiles!kyc_cases_tenant_id_fkey(full_name, email),
+      property:properties(address)
+    `)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Could not load KYC cases:', error.message);
+    complianceCasesCache = [];
+  } else {
+    complianceCasesCache = cases || [];
+  }
+  renderComplianceApplicationsTable();
+}
+
+function complianceStatusBadge(status) {
+  const map = {
+    pending_consent: 'bg-gray-100 text-gray-600',
+    consent_given: 'bg-gray-100 text-gray-600',
+    in_progress: 'bg-blue-50 text-blue-700',
+    verification_complete: 'bg-blue-50 text-blue-700',
+    manual_review: 'bg-yellow-50 text-yellow-700',
+    approved: 'bg-green-50 text-green-700',
+    declined: 'bg-red-50 text-red-700',
+    expired: 'bg-gray-100 text-gray-500',
+    cancelled: 'bg-gray-100 text-gray-500',
+  };
+  const cls = map[status] || 'bg-gray-100 text-gray-600';
+  return `<span class="text-xs font-semibold px-2.5 py-1 rounded-full ${cls}">${(status || '—').replace(/_/g, ' ')}</span>`;
+}
+
+function complianceRiskBadge(riskLevel) {
+  if (!riskLevel) return '<span class="text-xs text-gray-400">—</span>';
+  const map = { LOW: 'bg-green-50 text-green-700', MEDIUM: 'bg-yellow-50 text-yellow-700', HIGH: 'bg-red-50 text-red-700' };
+  return `<span class="text-xs font-semibold px-2.5 py-1 rounded-full ${map[riskLevel] || 'bg-gray-100 text-gray-600'}">${riskLevel}</span>`;
+}
+
+function renderComplianceApplicationsTable() {
+  const tbody = document.getElementById('compliance-applications-tbody');
+  if (!tbody) return;
+
+  let rows = complianceCasesCache;
+  if (complianceActiveTab === 'pending') {
+    rows = rows.filter(c => ['manual_review', 'in_progress', 'consent_given', 'pending_consent', 'verification_complete'].includes(c.status));
+  } else if (complianceActiveTab === 'completed') {
+    rows = rows.filter(c => ['approved', 'declined'].includes(c.status));
+  } else if (complianceActiveTab === 'high_risk') {
+    rows = rows.filter(c => c.risk_level === 'HIGH');
+  }
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-sm text-gray-400">No applications in this view.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(c => `
+    <tr class="border-b border-gray-100 text-sm">
+      <td class="py-2.5 px-3">${c.tenant?.full_name || c.tenant?.email || '—'}</td>
+      <td class="py-2.5 px-3">${c.property?.address || '—'}</td>
+      <td class="py-2.5 px-3">${c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
+      <td class="py-2.5 px-3">${complianceStatusBadge(c.status)}</td>
+      <td class="py-2.5 px-3">${c.overall_result ? c.overall_result : '<span class="text-xs text-gray-400">—</span>'}</td>
+      <td class="py-2.5 px-3">${c.review_required ? '<span class="text-xs font-semibold text-yellow-700">Review flagged</span>' : '<span class="text-xs text-gray-400">—</span>'}</td>
+      <td class="py-2.5 px-3">${complianceRiskBadge(c.risk_level)}</td>
+      <td class="py-2.5 px-3">${c.completed_at ? 'Reviewed' : 'Open'}</td>
+      <td class="py-2.5 px-3"><button data-open-kyc-case="${c.id}" class="text-xs font-semibold text-navy underline">View</button></td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('[data-open-kyc-case]').forEach(btn => {
+    btn.addEventListener('click', () => openComplianceDetail(btn.dataset.openKycCase));
+  });
+}
+
+/* ---------------- Application detail modal ---------------- */
+
+async function openComplianceDetail(caseId) {
+  complianceDetailCaseId = caseId;
+  const modal = document.getElementById('compliance-detail-modal');
+  const body = document.getElementById('compliance-detail-body');
+  const errorEl = document.getElementById('compliance-detail-error');
+  const successEl = document.getElementById('compliance-detail-success');
+  errorEl.classList.add('hidden');
+  successEl.classList.add('hidden');
+  body.innerHTML = '<p class="text-sm text-gray-400">Loading…</p>';
+  modal.classList.remove('hidden');
+
+  const [{ data: kycCase }, { data: checks }, { data: docs }, { data: risk }, { data: reviews }] = await Promise.all([
+    supabaseClient.from('kyc_cases').select(`
+      *, tenant:profiles!kyc_cases_tenant_id_fkey(full_name, email, phone), property:properties(address)
+    `).eq('id', caseId).single(),
+    supabaseClient.from('kyc_checks').select('*').eq('kyc_case_id', caseId).order('created_at'),
+    supabaseClient.from('kyc_documents').select('*').eq('kyc_case_id', caseId).order('uploaded_at', { ascending: false }),
+    supabaseClient.from('kyc_risk_assessments').select('*').eq('kyc_case_id', caseId).order('assessed_at', { ascending: false }).limit(1).maybeSingle(),
+    supabaseClient.from('kyc_reviews').select('*, reviewer:profiles!kyc_reviews_reviewer_id_fkey(full_name)').eq('kyc_case_id', caseId).order('reviewed_at', { ascending: false }),
+  ]);
+
+  if (!kycCase) {
+    body.innerHTML = '<p class="text-sm text-red-600">Could not load this application.</p>';
+    return;
+  }
+
+  const checksHtml = (checks || []).length
+    ? (checks || []).map(chk => `
+        <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+          <span class="text-gray-600">${chk.check_type.replace(/_/g, ' ')}</span>
+          <span class="flex items-center gap-2">
+            <span class="text-xs text-gray-400">${chk.status}</span>
+            ${chk.result ? `<span class="text-xs font-semibold ${chk.result === 'pass' ? 'text-green-700' : chk.result === 'fail' ? 'text-red-600' : 'text-yellow-700'}">${chk.result}</span>` : ''}
+          </span>
+        </div>`).join('')
+    : '<p class="text-xs text-gray-400">No checks started yet.</p>';
+
+  const docsHtml = (docs || []).length
+    ? (docs || []).map(d => `
+        <div class="flex items-center justify-between border-b border-gray-100 py-1.5">
+          <span class="text-gray-600">${d.document_type} — ${d.file_name || 'file'}</span>
+          <span class="flex items-center gap-2">
+            <span class="text-xs text-gray-400">${d.verification_status}</span>
+            <button data-preview-kyc-doc="${d.storage_path}" class="text-xs font-semibold text-navy underline">View</button>
+          </span>
+        </div>`).join('')
+    : '<p class="text-xs text-gray-400">No documents uploaded yet.</p>';
+
+  const reviewsHtml = (reviews || []).length
+    ? (reviews || []).map(r => `<p class="text-xs text-gray-500">${new Date(r.reviewed_at).toLocaleString()} — ${r.reviewer?.full_name || 'Admin'}: <span class="font-semibold">${r.decision}</span>${r.reason ? ` (${r.reason})` : ''}</p>`).join('')
+    : '<p class="text-xs text-gray-400">No review decisions yet.</p>';
+
+  body.innerHTML = `
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-gray-400">Applicant</p>
+        <p class="font-semibold text-navy">${kycCase.tenant?.full_name || kycCase.tenant?.email || '—'}</p>
+        <p class="text-xs text-gray-500">${kycCase.tenant?.email || ''}${kycCase.tenant?.phone ? ' · ' + kycCase.tenant.phone : ''}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-gray-400">Property</p>
+        <p class="font-semibold text-navy">${kycCase.property?.address || '—'}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-gray-400">Status</p>
+        <p>${complianceStatusBadge(kycCase.status)}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-gray-400">Risk Level</p>
+        <p>${complianceRiskBadge(kycCase.risk_level)} ${risk ? `<span class="text-xs text-gray-400 ml-1">score ${risk.overall_score ?? '—'}, ${risk.recommendation || '—'}</span>` : ''}</p>
+      </div>
+    </div>
+    <div>
+      <p class="text-xs uppercase tracking-wide text-gray-400 mb-1.5">Checks</p>
+      ${checksHtml}
+    </div>
+    <div>
+      <p class="text-xs uppercase tracking-wide text-gray-400 mb-1.5">Documents</p>
+      ${docsHtml}
+    </div>
+    <div>
+      <p class="text-xs uppercase tracking-wide text-gray-400 mb-1.5">Review History</p>
+      ${reviewsHtml}
+    </div>
+    <div class="pt-2 border-t border-gray-100">
+      <label class="field-label" for="compliance-request-doc-type">Request an additional document</label>
+      <div class="flex gap-2">
+        <input class="field flex-1" type="text" id="compliance-request-doc-type" placeholder="e.g. Proof of income">
+        <button id="compliance-request-doc-send" class="btn btn-secondary !py-2 !px-4 text-xs">Send Request</button>
+      </div>
+    </div>
+  `;
+
+  body.querySelectorAll('[data-preview-kyc-doc]').forEach(btn => {
+    btn.addEventListener('click', () => previewKycDocument(btn.dataset.previewKycDoc));
+  });
+
+  const requestDocBtn = body.querySelector('#compliance-request-doc-send');
+  if (requestDocBtn) {
+    requestDocBtn.addEventListener('click', async () => {
+      const docType = body.querySelector('#compliance-request-doc-type').value.trim();
+      if (!docType) { alert('Enter what document you need from the tenant.'); return; }
+      try {
+        await callAdminKycFunction('kyc-request-document', { kyc_case_id: caseId, document_type: docType });
+        successEl.textContent = 'Document request sent and logged.';
+        successEl.classList.remove('hidden');
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      }
+    });
+  }
+}
+
+async function previewKycDocument(path) {
+  const newTab = window.open('', '_blank');
+  const { data, error } = await supabaseClient.storage.from('kyc-documents').createSignedUrl(path, 300);
+  if (error) { if (newTab) newTab.close(); alert('Could not open file: ' + error.message); return; }
+  if (newTab) { newTab.location.href = data.signedUrl; } else { window.location.href = data.signedUrl; }
+}
+
+function wireComplianceDetailModal() {
+  const modal = document.getElementById('compliance-detail-modal');
+  if (!modal) return;
+  const closeBtn = document.getElementById('compliance-detail-close');
+  const errorEl = document.getElementById('compliance-detail-error');
+  const successEl = document.getElementById('compliance-detail-success');
+
+  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+  async function decide(decision, { needsReason = false, needsOverride = false } = {}) {
+    if (!complianceDetailCaseId) return;
+    let reason = null;
+    if (needsReason) {
+      reason = prompt('Reason (required):');
+      if (!reason || !reason.trim()) { alert('A reason is required.'); return; }
+    }
+    if (!confirm(`Confirm: ${decision.replace(/_/g, ' ')} this application?`)) return;
+
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    try {
+      const payload = { kyc_case_id: complianceDetailCaseId, decision, reason };
+      if (needsOverride) payload.override = true;
+      await callAdminKycFunction('kyc-complete-review', payload);
+      successEl.textContent = 'Decision recorded and logged to the audit trail.';
+      successEl.classList.remove('hidden');
+      await loadComplianceApplications();
+      await loadComplianceAuditLog();
+      await openComplianceDetail(complianceDetailCaseId);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('compliance-approve-btn').addEventListener('click', () => decide('approved'));
+  document.getElementById('compliance-request-info-btn').addEventListener('click', () => decide('request_information', { needsReason: true }));
+  document.getElementById('compliance-escalate-btn').addEventListener('click', () => decide('escalated'));
+  document.getElementById('compliance-decline-btn').addEventListener('click', () => decide('declined', { needsReason: true }));
+
+  // "Approve Tenant" above is the normal path (only works once mandatory
+  // KYC has actually completed — kyc-complete-review enforces this).
+  // Override & approve is a second, clearly separate action reached via
+  // the Request Document button area is intentionally NOT reused here —
+  // it gets its own explicit control so it's never accidentally one click
+  // away from the normal Approve button.
+  const detailBody = document.getElementById('compliance-detail-body');
+  const overrideBtn = document.createElement('button');
+  overrideBtn.id = 'compliance-override-btn';
+  overrideBtn.className = 'text-xs font-semibold px-4 py-2 rounded-full bg-purple-600 text-white hover:bg-purple-700 transition';
+  overrideBtn.textContent = 'Override & Approve';
+  document.getElementById('compliance-approve-btn').insertAdjacentElement('afterend', overrideBtn);
+  overrideBtn.addEventListener('click', async () => {
+    if (!complianceDetailCaseId) return;
+    const reason = prompt('This overrides the normal KYC gate. Reason (required, will be permanently audit-logged):');
+    if (!reason || !reason.trim()) { alert('A reason is required for an override.'); return; }
+    if (!confirm('Confirm: approve this application WITHOUT completed KYC? This is logged as KYC_OVERRIDE.')) return;
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+    try {
+      await callAdminKycFunction('kyc-complete-review', { kyc_case_id: complianceDetailCaseId, decision: 'approved', reason, override: true });
+      successEl.textContent = 'Override approved and logged.';
+      successEl.classList.remove('hidden');
+      await loadComplianceApplications();
+      await loadComplianceAuditLog();
+      await openComplianceDetail(complianceDetailCaseId);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.remove('hidden');
+    }
+  });
+}
+
+/* ---------------- Documents sub-view ---------------- */
+
+async function loadComplianceDocuments() {
+  const tbody = document.getElementById('compliance-documents-tbody');
+  if (!tbody) return;
+
+  const { data: docs, error } = await supabaseClient
+    .from('kyc_documents')
+    .select('id, document_type, file_name, storage_path, uploaded_at, verification_status, tenant:profiles!kyc_documents_tenant_id_fkey(full_name, email)')
+    .order('uploaded_at', { ascending: false })
+    .limit(200);
+
+  if (error || !docs || !docs.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="py-6 text-center text-sm text-gray-400">No KYC documents uploaded yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = docs.map(d => `
+    <tr class="border-b border-gray-100 text-sm">
+      <td class="py-2.5 px-3">${d.tenant?.full_name || d.tenant?.email || '—'}</td>
+      <td class="py-2.5 px-3">${d.document_type}</td>
+      <td class="py-2.5 px-3">${d.file_name || '—'}</td>
+      <td class="py-2.5 px-3">${d.uploaded_at ? new Date(d.uploaded_at).toLocaleString() : '—'}</td>
+      <td class="py-2.5 px-3">${d.verification_status}</td>
+      <td class="py-2.5 px-3"><button data-preview-kyc-doc-row="${d.storage_path}" class="text-xs font-semibold text-navy underline">View</button></td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('[data-preview-kyc-doc-row]').forEach(btn => {
+    btn.addEventListener('click', () => previewKycDocument(btn.dataset.previewKycDocRow));
+  });
+}
+
+/* ---------------- Audit log sub-view ---------------- */
+
+async function loadComplianceAuditLog() {
+  const tbody = document.getElementById('compliance-audit-tbody');
+  if (!tbody) return;
+
+  const { data: events, error } = await supabaseClient
+    .from('kyc_audit_log')
+    .select('id, event_type, event_description, created_at, kyc_case_id, kyc_case:kyc_cases(tenant:profiles!kyc_cases_tenant_id_fkey(full_name, email))')
+    .order('created_at', { ascending: false })
+    .limit(300);
+
+  if (error || !events || !events.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-sm text-gray-400">No audit events yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = events.map(e => `
+    <tr class="border-b border-gray-100 text-sm">
+      <td class="py-2.5 px-3 whitespace-nowrap">${new Date(e.created_at).toLocaleString()}</td>
+      <td class="py-2.5 px-3">${e.kyc_case?.tenant?.full_name || e.kyc_case?.tenant?.email || '—'}</td>
+      <td class="py-2.5 px-3"><span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">${e.event_type}</span></td>
+      <td class="py-2.5 px-3 text-gray-600">${e.event_description || ''}</td>
+    </tr>
+  `).join('');
+}
+
+/* ---------------- Settings sub-view ---------------- */
+
+async function loadComplianceSettings() {
+  const { data: settings, error } = await supabaseClient.from('compliance_settings').select('*').limit(1).maybeSingle();
+  if (error || !settings) return;
+
+  document.getElementById('cs-provider').value = settings.provider || '';
+  const checks = settings.enabled_checks || {};
+  document.querySelectorAll('#cs-enabled-checks input[data-check]').forEach(cb => {
+    cb.checked = !!checks[cb.dataset.check];
+  });
+  const thresholds = settings.risk_thresholds || {};
+  document.getElementById('cs-low-max').value = thresholds.low_max ?? '';
+  document.getElementById('cs-medium-max').value = thresholds.medium_max ?? '';
+  document.getElementById('cs-require-manual-review').checked = !!settings.require_manual_review;
+  document.getElementById('cs-require-kyc-before-lease').checked = !!settings.require_kyc_before_lease;
+  document.getElementById('cs-doc-retention').value = settings.document_retention_period_days ?? '';
+  document.getElementById('cs-record-retention').value = settings.kyc_record_retention_period_days ?? '';
+  document.getElementById('cs-audit-retention').value = settings.audit_log_retention_period_days ?? '';
+
+  const form = document.getElementById('compliance-settings-form');
+  if (form) form.dataset.settingsId = settings.id;
+}
+
+function wireComplianceSettingsForm() {
+  const form = document.getElementById('compliance-settings-form');
+  if (!form) return;
+  const errorEl = document.getElementById('cs-error');
+  const successEl = document.getElementById('cs-success');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    const settingsId = form.dataset.settingsId;
+    if (!settingsId) { errorEl.textContent = 'Settings row not loaded yet — refresh and try again.'; errorEl.classList.remove('hidden'); return; }
+
+    const enabledChecks = {};
+    document.querySelectorAll('#cs-enabled-checks input[data-check]').forEach(cb => {
+      enabledChecks[cb.dataset.check] = cb.checked;
+    });
+
+    const toIntOrNull = (val) => (val === '' || val === null || val === undefined) ? null : parseInt(val, 10);
+
+    const { error } = await supabaseClient.from('compliance_settings').update({
+      provider: document.getElementById('cs-provider').value.trim() || 'placeholder',
+      enabled_checks: enabledChecks,
+      risk_thresholds: {
+        low_max: toIntOrNull(document.getElementById('cs-low-max').value) ?? 39,
+        medium_max: toIntOrNull(document.getElementById('cs-medium-max').value) ?? 69,
+      },
+      require_manual_review: document.getElementById('cs-require-manual-review').checked,
+      require_kyc_before_lease: document.getElementById('cs-require-kyc-before-lease').checked,
+      document_retention_period_days: toIntOrNull(document.getElementById('cs-doc-retention').value),
+      kyc_record_retention_period_days: toIntOrNull(document.getElementById('cs-record-retention').value),
+      audit_log_retention_period_days: toIntOrNull(document.getElementById('cs-audit-retention').value),
+      updated_at: new Date().toISOString(),
+      updated_by: currentAdmin.id,
+    }).eq('id', settingsId);
+
+    if (error) {
+      errorEl.textContent = error.message;
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    successEl.textContent = 'Compliance settings saved.';
+    successEl.classList.remove('hidden');
   });
 }

@@ -22,7 +22,190 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireDetailsForm(currentProfile);
   await wirePayNow(currentProfile.id);
   await wireRentalBreakdown(currentProfile.id);
+  await initKycStatus(currentProfile.id);
 });
+
+/* ================================================================
+   KYC / TENANT SCREENING
+   ================================================================ */
+
+async function callKycFunction(name, payload) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${name} failed (${res.status})`);
+  return body;
+}
+
+const KYC_CHECK_LABELS = {
+  identity: 'Identity verification', id_document: 'Document verification', face_match: 'Face match',
+  liveness: 'Liveness check', bank_account: 'Bank verification', credit: 'Credit screening',
+  aml: 'AML screening', pep: 'PEP screening', sanctions: 'Sanctions screening',
+  income: 'Income verification', employment: 'Employment verification', address: 'Address verification',
+  rental_history: 'Rental history check',
+};
+
+async function initKycStatus(tenantId) {
+  const card = document.getElementById('kyc-status-card');
+  if (!card) return;
+
+  const { data: kycCase } = await supabaseClient
+    .from('kyc_cases')
+    .select('id, status')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!kycCase) return; // no application in flight — nothing to show
+
+  card.classList.remove('hidden');
+  card.dataset.kycCaseId = kycCase.id;
+  await renderKycStatus(kycCase.id);
+  wireKycConsentForm(kycCase.id);
+  wireKycUploadForm(kycCase.id, tenantId);
+}
+
+async function renderKycStatus(kycCaseId) {
+  const badge = document.getElementById('kyc-status-badge');
+  const subtext = document.getElementById('kyc-status-subtext');
+  const consentBlock = document.getElementById('kyc-consent-block');
+  const checksBlock = document.getElementById('kyc-checks-block');
+  const actionBlock = document.getElementById('kyc-action-block');
+  [consentBlock, checksBlock, actionBlock].forEach((el) => el.classList.add('hidden'));
+
+  let data;
+  try {
+    data = await callKycFunction('kyc-get-status', { kyc_case_id: kycCaseId });
+  } catch (err) {
+    subtext.textContent = 'Could not load verification status: ' + err.message;
+    return;
+  }
+
+  badge.textContent = data.status;
+  const badgeColor = ['Approved', 'Verification Complete'].includes(data.status) ? 'bg-green-100 text-green-700'
+    : ['Declined'].includes(data.status) ? 'bg-red-100 text-red-700'
+    : 'bg-yellow-100 text-yellow-700';
+  badge.className = `text-xs font-semibold px-2.5 py-1 rounded-full ${badgeColor}`;
+
+  if (data.status === 'Consent Required') {
+    subtext.textContent = 'We need your consent before we can verify your application.';
+    consentBlock.classList.remove('hidden');
+    return;
+  }
+
+  if (data.action_required) {
+    subtext.textContent = 'We need an additional document from you to continue.';
+    actionBlock.classList.remove('hidden');
+    document.getElementById('kyc-action-message').textContent =
+      data.document_request?.message || `Please upload: ${data.document_request?.document_type || 'the requested document'}.`;
+    return;
+  }
+
+  subtext.textContent = data.status === 'Approved' ? 'You’re verified — your lease can now proceed.'
+    : data.status === 'Declined' ? 'Your application was not approved.'
+    : data.status === 'Under Review' ? 'Your application is being reviewed by our team.'
+    : 'We’re running your verification checks now.';
+
+  if (data.checks && data.checks.length > 0) {
+    checksBlock.classList.remove('hidden');
+    checksBlock.innerHTML = data.checks.map((c) => {
+      const color = c.label === 'Complete' ? 'bg-green-100 text-green-700' : c.label === 'Needs Attention' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700';
+      return `<div class="flex items-center justify-between text-sm border-b border-gray-100 py-2">
+        <span class="text-gray-700">${KYC_CHECK_LABELS[c.check_type] || c.check_type}</span>
+        <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${color}">${c.label}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+function wireKycConsentForm(kycCaseId) {
+  const checkboxes = ['kyc-consent-identity', 'kyc-consent-credit', 'kyc-consent-data'].map((id) => document.getElementById(id));
+  const startBtn = document.getElementById('kyc-start-verification-btn');
+  if (!startBtn) return;
+
+  checkboxes.forEach((cb) => cb.addEventListener('change', () => {
+    startBtn.disabled = !checkboxes.every((c) => c.checked);
+  }));
+
+  startBtn.addEventListener('click', async () => {
+    const errorEl = document.getElementById('kyc-consent-error');
+    errorEl.classList.add('hidden');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Starting…';
+
+    try {
+      const consentTexts = {
+        kyc_consent_identity: { type: 'identity_verification', text: 'I consent to identity verification (confirming who I am using my ID document).' },
+        kyc_consent_credit: { type: 'credit_background_screening', text: 'I consent to credit and background screening as part of my rental application.' },
+        kyc_consent_data: { type: 'data_processing', text: 'I consent to my personal information being processed for the purpose of this application, in line with Zanka Group’s privacy policy.' },
+      };
+      const consentRows = Object.values(consentTexts).map((c) => ({
+        kyc_case_id: kycCaseId, consent_type: c.type, consent_text: c.text, consent_version: 'v1',
+        accepted: true, accepted_at: new Date().toISOString(), user_agent: navigator.userAgent,
+      }));
+      const { error: consentError } = await supabaseClient.from('kyc_consents').insert(consentRows);
+      if (consentError) throw consentError;
+
+      const { data: pendingChecks } = await supabaseClient.from('kyc_checks').select('check_type').eq('kyc_case_id', kycCaseId).eq('status', 'pending');
+      for (const c of pendingChecks || []) {
+        await callKycFunction('kyc-start-check', { kyc_case_id: kycCaseId, check_type: c.check_type });
+      }
+
+      await renderKycStatus(kycCaseId);
+    } catch (err) {
+      errorEl.textContent = err.message || 'Something went wrong starting verification.';
+      errorEl.classList.remove('hidden');
+      startBtn.disabled = false;
+    } finally {
+      startBtn.textContent = 'Start Verification';
+    }
+  });
+}
+
+function wireKycUploadForm(kycCaseId, tenantId) {
+  const btn = document.getElementById('kyc-upload-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const fileInput = document.getElementById('kyc-upload-input');
+    const errorEl = document.getElementById('kyc-upload-error');
+    const successEl = document.getElementById('kyc-upload-success');
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+
+    const file = fileInput.files[0];
+    if (!file) { errorEl.textContent = 'Choose a file first.'; errorEl.classList.remove('hidden'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    try {
+      const path = `${tenantId}/${kycCaseId}/${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabaseClient.storage.from('kyc-documents').upload(path, file);
+      if (uploadError) throw uploadError;
+
+      const { error: docError } = await supabaseClient.from('kyc_documents').insert([{
+        kyc_case_id: kycCaseId, tenant_id: tenantId, document_type: 'requested_document',
+        storage_path: path, file_name: file.name, mime_type: file.type, file_size: file.size,
+      }]);
+      if (docError) throw docError;
+
+      successEl.textContent = 'Uploaded — our team will review it shortly.';
+      successEl.classList.remove('hidden');
+      fileInput.value = '';
+      await renderKycStatus(kycCaseId);
+    } catch (err) {
+      errorEl.textContent = err.message || 'Upload failed.';
+      errorEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Upload Document';
+    }
+  });
+}
 
 // This was the actual gap behind "FICA approved but nothing asked me
 // to sign" — the dashboard had no UI at all pointing to lease-sign.html,

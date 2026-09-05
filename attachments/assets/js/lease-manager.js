@@ -1,5 +1,17 @@
 // Zanka Group — Lease Management Module 16h05
 // Requires supabase-client.js and auth.js loaded first.
+
+async function callKycFunctionFromLeaseManager(name, payload) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || SUPABASE_ANON_KEY}` },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${name} failed (${res.status})`);
+  return body;
+}
 //
 // NOTE ON "ECTA COMPLIANCE": this file implements supporting technical
 // measures for electronic signing — IP capture, user-agent capture, OTP
@@ -356,6 +368,22 @@ async function handleWizardSubmit(e) {
       enabled_clause_ids: enabledClauseIds,
     }]).select().single();
     if (leaseError) throw leaseError;
+
+    // 1a. Create the KYC case for this application. This is the trigger
+    // point for the whole compliance module — "application" on this
+    // platform IS this Draft lease. Soft-fails: a KYC hiccup here
+    // shouldn't block the lease itself from being created; an admin can
+    // always create the case manually later if this ever fails.
+    try {
+      const { data: settings } = await supabaseClient.from('compliance_settings').select('enabled_checks').limit(1).single();
+      const enabledChecks = settings?.enabled_checks || {};
+      const requestedChecks = Object.keys(enabledChecks).filter((k) => enabledChecks[k]);
+      if (requestedChecks.length > 0) {
+        await callKycFunctionFromLeaseManager('kyc-create-case', { application_id: lease.id, tenant_id: tenantId, requested_checks: requestedChecks });
+      }
+    } catch (kycErr) {
+      console.error('Could not auto-create KYC case for this lease:', kycErr.message);
+    }
 
     // 1b. Record any escalation periods. previous_rental_amount for the
     // first escalation is the base rent; each subsequent one compounds

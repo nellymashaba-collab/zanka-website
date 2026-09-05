@@ -13,7 +13,77 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkPendingLeaseSignature(profile.id);
   await checkInvestorAccess(profile.id);
   await loadOwnerData(profile.id);
+  await loadOwnerKycSummaries(profile.id);
 });
+
+// ---------------------------------------------------------------------
+// Tenant Screening (KYC) — restricted summary only. Owners have NO direct
+// RLS read access to kyc_cases/kyc_checks/etc (see 022_kyc_module.sql) —
+// this deliberately goes through the kyc-get-status Edge Function, which
+// returns a curated, non-sensitive shape for the owner role. We look each
+// case up by application_id (the lease id) since owners can't query
+// kyc_cases directly to find the id themselves.
+async function loadOwnerKycSummaries(ownerId) {
+  const container = document.getElementById('kyc-summary-list');
+  if (!container) return;
+
+  const { data: leases } = await supabaseClient
+    .from('leases')
+    .select('id, status, properties!inner ( owner_id, address )')
+    .eq('properties.owner_id', ownerId)
+    .order('created_at', { ascending: false });
+
+  if (!leases || !leases.length) {
+    container.innerHTML = '<p class="text-sm text-gray-400">No applications yet.</p>';
+    return;
+  }
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const authHeader = `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`;
+
+  const summaries = await Promise.all(leases.map(async (lease) => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/kyc-get-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+        body: JSON.stringify({ application_id: lease.id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return null;
+      return { lease, summary: body };
+    } catch {
+      return null;
+    }
+  }));
+
+  const withCases = summaries.filter(s => s && s.summary && s.summary.status !== 'not_started');
+  if (!withCases.length) {
+    container.innerHTML = '<p class="text-sm text-gray-400">No screening in progress for your properties.</p>';
+    return;
+  }
+
+  const badgeClass = (val) => {
+    const positive = ['Verified', 'Complete', 'Pass', 'LOW', 'PROCEED'];
+    const negative = ['Not Verified', 'Fail', 'HIGH', 'DO_NOT_PROCEED'];
+    if (positive.includes(val)) return 'bg-green-50 text-green-700';
+    if (negative.includes(val)) return 'bg-red-50 text-red-700';
+    return 'bg-yellow-50 text-yellow-700';
+  };
+
+  container.innerHTML = withCases.map(({ lease, summary }) => `
+    <div class="border border-gray-100 rounded-xl p-4">
+      <p class="font-semibold text-navy text-sm mb-0.5">${summary.tenant_name || 'Applicant'}</p>
+      <p class="text-xs text-gray-500 mb-3">${lease.properties?.address || 'Property'}</p>
+      <div class="space-y-1.5 text-xs">
+        <div class="flex items-center justify-between"><span class="text-gray-500">Identity</span><span class="font-semibold px-2 py-0.5 rounded-full ${badgeClass(summary.identity)}">${summary.identity || 'Pending'}</span></div>
+        <div class="flex items-center justify-between"><span class="text-gray-500">Screening</span><span class="font-semibold px-2 py-0.5 rounded-full ${badgeClass(summary.screening)}">${summary.screening || 'Pending'}</span></div>
+        <div class="flex items-center justify-between"><span class="text-gray-500">Affordability</span><span class="font-semibold px-2 py-0.5 rounded-full ${badgeClass(summary.affordability)}">${summary.affordability || 'Pending'}</span></div>
+        <div class="flex items-center justify-between"><span class="text-gray-500">Risk</span><span class="font-semibold px-2 py-0.5 rounded-full ${badgeClass(summary.risk)}">${summary.risk || 'Pending'}</span></div>
+        <div class="flex items-center justify-between"><span class="text-gray-500">Recommendation</span><span class="font-semibold px-2 py-0.5 rounded-full ${badgeClass(summary.recommendation)}">${(summary.recommendation || 'Pending').replace(/_/g, ' ')}</span></div>
+      </div>
+    </div>
+  `).join('');
+}
 
 // Some owners also represent one or more investor entities (e.g. an
 // owner who personally owns one property, but also represents Zanka
