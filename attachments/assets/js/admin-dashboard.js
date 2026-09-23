@@ -45,6 +45,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireRejectModal();
   await initUnitsManagement();
   await initComplianceManagement();
+  await loadWhatsappMessages();
+  document.getElementById('whatsapp-refresh')?.addEventListener('click', loadWhatsappMessages);
 });
 
 /* ---------------- Sidebar section switching ---------------- */
@@ -194,6 +196,61 @@ async function loadGlobalMaintenance() {
 
       await notifyEdgeFunction({ maintenance_event: 'maintenance_request_completed', maintenance_request_id: requestId });
       await loadGlobalMaintenance();
+    });
+  });
+}
+
+/* ---------------- WhatsApp inbox (read-only view of whatsapp_messages, filled by the whatsapp-webhook Edge Function) ---------------- */
+async function loadWhatsappMessages() {
+  const { data: messages, error } = await supabaseClient
+    .from('whatsapp_messages')
+    .select('*')
+    .order('wa_timestamp', { ascending: false })
+    .limit(200);
+
+  const container = document.getElementById('admin-whatsapp-list');
+  if (!container) return;
+
+  if (error) {
+    container.innerHTML = `<p class="text-sm text-red-500 py-4 text-center">${error.message}</p>`;
+    return;
+  }
+
+  if (!messages || messages.length === 0) {
+    container.innerHTML = `<p class="text-sm text-gray-400 py-4 text-center">No WhatsApp messages yet.</p>`;
+    return;
+  }
+
+  container.innerHTML = messages.map(m => `
+    <div class="flex items-start justify-between py-3.5 border-b border-gray-100 last:border-0 gap-3">
+      <div class="min-w-0">
+        <p class="font-semibold text-navy text-sm">${m.contact_name || m.wa_from}</p>
+        <p class="text-xs text-gray-400">${m.wa_from}</p>
+        <p class="text-sm text-gray-600 mt-1">${(m.body_text || `[${m.message_type}]`).replace(/</g, '&lt;')}</p>
+        <span class="text-[10px] text-gray-400 block mt-1">${new Date(m.wa_timestamp).toLocaleString()}</span>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${m.status === 'replied' ? 'bg-green-100 text-green-700' : m.status === 'read' ? 'bg-blue-100 text-blue-700' : 'bg-gold-light/40 text-gold'}">
+          ${m.status}
+        </span>
+        ${m.status !== 'replied' ? `<button data-mark-replied="${m.id}" class="text-xs font-semibold text-gold hover:underline">Mark Replied</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-mark-replied]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.markReplied;
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+      const { error } = await supabaseClient.from('whatsapp_messages').update({ status: 'replied' }).eq('id', id);
+      if (error) {
+        alert('Could not update: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Mark Replied';
+        return;
+      }
+      await loadWhatsappMessages();
     });
   });
 }
