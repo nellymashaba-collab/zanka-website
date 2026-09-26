@@ -200,7 +200,7 @@ async function loadOwnerData(ownerId) {
   // Statements, lease docs, inspection reports, invoices, levy statements —
   // all stored as file rows with a URL. loadDocs fetches every matching row
   // (no .single()/.maybeSingle()), so leases naturally return full history.
-  await loadDocs('statements', 'statements-list', ownerId);
+  await loadOwnerStatements(ownerId);
   await loadOwnerLeases(ownerId);
   await loadDocs('inspections', 'inspections-list', ownerId);
   await loadOwnerContractorInvoices(ownerId);
@@ -296,6 +296,59 @@ async function loadLeaseInspections(ownerId) {
       </div>
       <span class="text-xs font-semibold px-3 py-1 rounded-full ${i.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${i.status}</span>
     </div>`).join('');
+}
+
+// Owner Statements — either manually published by admin (category "Owner
+// Statement", title/file_url only) or auto-generated whenever a rental
+// invoice is created (which also fills in gross_rental/commission/
+// net_payable). Renders the breakdown inline when those numbers are
+// present, falls back to a plain title+link for older manually-published
+// rows that predate the automatic flow.
+async function loadOwnerStatements(ownerId) {
+  const container = document.getElementById('statements-list');
+  if (!container) return;
+
+  const { data } = await supabaseClient
+    .from('statements')
+    .select('*')
+    .eq('owner_id', ownerId)
+    .order('created_at', { ascending: false });
+
+  if (!data || !data.length) {
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Nothing to show yet.</p>';
+    return;
+  }
+
+  const fmtMoney = (n) => 'R' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  container.innerHTML = data.map((s) => {
+    const hasBreakdown = s.gross_rental !== null && s.gross_rental !== undefined;
+    const monthLabel = s.statement_month ? new Date(s.statement_month).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : '';
+    const link = s.file_url
+      ? `<a href="${s.file_url}" target="_blank" rel="noopener" class="learn-more text-xs">Download →</a>`
+      : '<span class="text-xs text-gray-400 italic">No document attached</span>';
+
+    if (!hasBreakdown) {
+      return `
+        <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 -mx-2 px-2">
+          <span class="text-navy font-medium">${s.title || 'Statement'}</span>
+          ${link}
+        </div>`;
+    }
+
+    return `
+      <div class="py-3 border-b border-gray-100 last:border-0 -mx-2 px-2">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-navy font-semibold text-sm">${monthLabel || s.title}</span>
+          ${link}
+        </div>
+        <div class="text-xs text-gray-500 space-y-0.5">
+          <div class="flex justify-between"><span>Gross Rental</span><span>${fmtMoney(s.gross_rental)}</span></div>
+          <div class="flex justify-between"><span>Commission (${s.commission_percentage ?? 0}%)</span><span>(${fmtMoney(s.commission_amount)})</span></div>
+          <div class="flex justify-between font-semibold text-navy pt-0.5"><span>Net Payable</span><span>${fmtMoney(s.net_payable)}</span></div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 async function loadDocs(table, elementId, ownerId, ownerColumn = 'owner_id') {

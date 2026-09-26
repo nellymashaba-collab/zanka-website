@@ -1442,6 +1442,16 @@ async function handleRentalUploadSubmit(e) {
       meta_notes: `Rental invoice published for ${statementMonth}.`,
     });
 
+    // Auto-publish the owner's statement for this month too — same as the
+    // Generate Invoice (10% package) flow. Soft-fails internally.
+    await createOwnerStatementForRentalInvoice({
+      propertyId, ownerId,
+      tenantName: tenantSelect.selectedOptions[0]?.textContent || '',
+      statementMonth,
+      netRental: breakdown.net_rental,
+      invoiceRef: opRow.id,
+    });
+
     successEl.textContent = 'Invoice published to owner and tenant.';
     successEl.classList.remove('hidden');
     document.getElementById('rental-upload-form').reset();
@@ -2157,6 +2167,15 @@ async function handleInvoiceGenerateSubmit(e) {
         recipient_context: 'tenant_and_owner',
         meta_notes: `Invoice ${invoice.invoice_number} generated for ${invoiceDate}.`,
       });
+
+      // 8. Auto-publish the owner's statement for this month (gross rental
+      // less management commission) — soft-fails, never blocks the
+      // tenant invoice that already went out.
+      await createOwnerStatementForRentalInvoice({
+        propertyId, ownerId, tenantName,
+        statementMonth: invoiceDate.slice(0, 7),
+        netRental, invoiceRef: invoice.invoice_number,
+      });
     } catch (innerErr) {
       await supabaseClient.from('tenant_invoices').delete().eq('id', invoice.id);
       throw new Error(`${innerErr.message} — the incomplete invoice was removed, please try again.`);
@@ -2457,6 +2476,209 @@ function renderTenantInvoicePdf(jsPDFCtor, d) {
   doc.setFont('times', 'italic');
   doc.setFontSize(11);
   doc.text('Thank you for your business.', pageW / 2, y, { align: 'center' });
+  y += 16;
+  doc.setTextColor(154, 160, 174);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(
+    'Zanka Group (Pty) Ltd · Company Reg: 2025/862423/07 · admin@zankagroup.co.za · Sandton, Johannesburg, South Africa · zankagroup.co.za',
+    pageW / 2, y, { align: 'center' }
+  );
+
+  return doc.output('blob');
+}
+
+// ================= Auto owner statement (net payout after commission) =================
+// Called after a tenant rental invoice is successfully published, from
+// BOTH the Generate Invoice (10% package) and Upload Rent/Utility Invoice
+// (manual) flows. Deliberately soft-fails — a problem generating the
+// owner statement should never roll back an invoice that's already been
+// sent to the tenant.
+//
+// Commission source: properties.package_tier (e.g. '10%'), parsed as a
+// percentage of net_rental only (utilities/levies are pass-through
+// recoveries, not commissionable). There is no other commission
+// mechanism live anywhere on this platform today — leases.commission is
+// collected but never read back, and the separate "Commission Statement"
+// category tracks partner/agent payouts, not owner management fees — so
+// this is a deliberate, new calculation, not a reuse of something else.
+async function createOwnerStatementForRentalInvoice({ propertyId, ownerId, tenantName, statementMonth, netRental, invoiceRef }) {
+  if (!ownerId) return; // no owner on file for this property — nothing to publish to
+  try {
+    const { data: property } = await supabaseClient.from('properties').select('address, package_tier').eq('id', propertyId).single();
+    const pctMatch = String(property?.package_tier || '').match(/[\d.]+/);
+    const commissionPct = pctMatch ? parseFloat(pctMatch[0]) : 0;
+    const grossRental = Number(netRental) || 0;
+    const commissionAmountFixed = Math.round((grossRental * commissionPct / 100) * 100) / 100;
+    const netPayable = Math.round((grossRental - commissionAmountFixed) * 100) / 100;
+
+    const monthLabel = new Date(statementMonth + '-01T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const propertyLine1 = (property?.address || '').split('\n')[0] || 'Property';
+    const title = `Owner Statement — ${monthLabel} — ${propertyLine1} — Net R${netPayable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const pdfBlob = await generateOwnerStatementPdfBlob({
+      propertyAddress: property?.address || '',
+      statementMonth: monthLabel,
+      tenantName: tenantName || '—',
+      grossRental, commissionPct, commissionAmount: commissionAmountFixed, netPayable,
+      invoiceRef: invoiceRef || '',
+    });
+    const storagePath = `documents/owner-statements/${propertyId}/${statementMonth}.pdf`;
+    await uploadInvoiceFile(pdfBlob, storagePath, 'application/pdf');
+    const { data: signedUrlData } = await supabaseClient.storage.from('documents').createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+
+    const { error: stmtError } = await supabaseClient.from('statements').insert([{
+      owner_id: ownerId,
+      property_id: propertyId,
+      title,
+      file_url: signedUrlData?.signedUrl || null,
+      statement_month: statementMonth + '-01',
+      tenant_name: tenantName || null,
+      gross_rental: grossRental,
+      commission_percentage: commissionPct,
+      commission_amount: commissionAmountFixed,
+      net_payable: netPayable,
+    }]);
+    if (stmtError) throw stmtError;
+  } catch (err) {
+    console.error('Could not auto-create owner statement for this invoice:', err.message);
+  }
+}
+
+// Same branded look as the tenant invoice, but a statement showing what
+// the owner actually receives after management commission is deducted —
+// not a bill the owner needs to pay.
+function generateOwnerStatementPdfBlob(d) {
+  return new Promise((resolve, reject) => {
+    const jsPDFCtor = window.jspdf?.jsPDF;
+    if (typeof jsPDFCtor !== 'function') {
+      reject(new Error('PDF library failed to load — check your internet connection and try again.'));
+      return;
+    }
+    try {
+      resolve(renderOwnerStatementPdf(jsPDFCtor, d));
+    } catch (err) {
+      reject(new Error('Failed to render owner statement PDF: ' + (err?.message || err)));
+    }
+  });
+}
+
+function renderOwnerStatementPdf(jsPDFCtor, d) {
+  const fmtMoney = (n) => 'R ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const NAVY = [31, 42, 68];
+  const NAVY_DEEP = [20, 28, 48];
+  const GOLD = [200, 155, 60];
+  const GOLD_LIGHT = [228, 199, 122];
+  const OFF_WHITE = [244, 244, 244];
+  const GRAY = [138, 144, 160];
+  const BORDER = [236, 237, 241];
+  const WHITE = [255, 255, 255];
+
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'portrait' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 48;
+  const contentW = pageW - margin * 2;
+
+  doc.setFillColor(...NAVY_DEEP);
+  doc.rect(0, 0, pageW, 92, 'F');
+  doc.setFillColor(...GOLD);
+  doc.roundedRect(margin, 26, 40, 40, 6, 6, 'F');
+  doc.setTextColor(...NAVY_DEEP);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(20);
+  doc.text('Z', margin + 20, 26 + 27, { align: 'center' });
+  doc.setTextColor(...WHITE);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(16);
+  doc.text('ZANKA GROUP', margin + 52, 42);
+  doc.setTextColor(185, 192, 207);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('P R O P E R T Y   M A N A G E M E N T', margin + 52, 54);
+  doc.setTextColor(...WHITE);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(20);
+  doc.text('OWNER STATEMENT', pageW - margin, 42, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(d.statementMonth, pageW - margin, 56, { align: 'right' });
+  doc.setFillColor(...GOLD);
+  doc.rect(0, 92, pageW, 3, 'F');
+
+  let y = 128;
+  doc.setTextColor(...GOLD);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('PROPERTY', margin, y);
+  doc.setTextColor(...NAVY);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(12.5);
+  const addrLines = doc.splitTextToSize((d.propertyAddress || '').replace(/\n/g, ', '), contentW - 20);
+  doc.text(addrLines, margin, y + 18);
+  y += 18 + addrLines.length * 14 + 10;
+
+  doc.setTextColor(...GRAY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.text(`Tenant: ${d.tenantName}${d.invoiceRef ? '   ·   Invoice Ref: ' + d.invoiceRef : ''}`, margin, y);
+  y += 24;
+
+  // Breakdown table
+  const rows = [
+    { label: 'Gross Rental Invoiced', value: d.grossRental, bold: false },
+    { label: `Less: Management Commission (${d.commissionPct}%)`, value: -d.commissionAmount, bold: false },
+  ];
+  const colDesc = margin + 10;
+  const colTotal = pageW - margin - 10;
+  const rowH = 26;
+  const headerH = 26;
+
+  doc.setFillColor(...NAVY);
+  doc.rect(margin, y, contentW, headerH, 'F');
+  doc.setTextColor(...WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('DESCRIPTION', colDesc, y + 16);
+  doc.text('AMOUNT', colTotal, y + 16, { align: 'right' });
+
+  let rowY = y + headerH;
+  rows.forEach((row, i) => {
+    if (i % 2 === 1) { doc.setFillColor(250, 250, 251); doc.rect(margin, rowY, contentW, rowH, 'F'); }
+    doc.setTextColor(51, 56, 70);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.text(row.label, colDesc, rowY + 17);
+    doc.setTextColor(...NAVY);
+    doc.setFont('helvetica', 'bold');
+    doc.text((row.value < 0 ? '(' + fmtMoney(Math.abs(row.value)) + ')' : fmtMoney(row.value)), colTotal, rowY + 17, { align: 'right' });
+    doc.setDrawColor(...BORDER);
+    doc.line(margin, rowY + rowH, margin + contentW, rowY + rowH);
+    rowY += rowH;
+  });
+  y = rowY + 24;
+
+  const totalBoxW = 240;
+  doc.setFillColor(...NAVY);
+  doc.roundedRect(pageW - margin - totalBoxW, y, totalBoxW, 44, 8, 8, 'F');
+  doc.setTextColor(185, 192, 207);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('NET PAYABLE TO OWNER', pageW - margin - 16, y + 17, { align: 'right' });
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(18);
+  doc.text(fmtMoney(d.netPayable), pageW - margin - 16, y + 36, { align: 'right' });
+
+  y += 44 + 34;
+  doc.setDrawColor(...BORDER);
+  doc.line(margin, y, pageW - margin, y);
+  y += 22;
+  doc.setTextColor(...NAVY);
+  doc.setFont('times', 'italic');
+  doc.setFontSize(11);
+  doc.text('Thank you for trusting us with your property.', pageW / 2, y, { align: 'center' });
   y += 16;
   doc.setTextColor(154, 160, 174);
   doc.setFont('helvetica', 'normal');
