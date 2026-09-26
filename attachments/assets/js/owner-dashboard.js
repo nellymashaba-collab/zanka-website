@@ -201,6 +201,7 @@ async function loadOwnerData(ownerId) {
   // all stored as file rows with a URL. loadDocs fetches every matching row
   // (no .single()/.maybeSingle()), so leases naturally return full history.
   await loadOwnerStatements(ownerId);
+  await loadOwnerRentalStatements((properties || []).map(p => p.id));
   await loadOwnerLeases(ownerId);
   await loadDocs('inspections', 'inspections-list', ownerId);
   await loadOwnerContractorInvoices(ownerId);
@@ -349,6 +350,58 @@ async function loadOwnerStatements(ownerId) {
         </div>
       </div>`;
   }).join('');
+}
+
+// Rental Statements — the same per-invoice detail the tenant sees on their
+// own dashboard (documents, category "Rent/Utility Invoice"), scoped to
+// this owner's properties instead of a single tenant_id, with the same
+// signed-URL-on-click download pattern used everywhere else for the
+// documents table.
+async function loadOwnerRentalStatements(propertyIds) {
+  const container = document.getElementById('owner-rental-statements-list');
+  if (!container) return;
+
+  if (!propertyIds || !propertyIds.length) {
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Nothing to show yet.</p>';
+    return;
+  }
+
+  const { data } = await supabaseClient
+    .from('documents')
+    .select('*')
+    .in('property_id', propertyIds)
+    .eq('status', 'Approved')
+    .neq('category', 'Levy Statement')
+    .order('created_at', { ascending: false });
+
+  if (!data || !data.length) {
+    container.innerHTML = '<p class="text-sm text-gray-400 py-4">Nothing to show yet.</p>';
+    return;
+  }
+
+  container.innerHTML = data.map(d => {
+    const monthLabel = d.statement_month
+      ? new Date(d.statement_month).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+      : new Date(d.created_at).toLocaleDateString();
+    return `
+      <button data-owner-doc-download="${d.id}" data-doc-path="${d.storage_path}" class="w-full flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-offwhite -mx-2 px-2 rounded text-left">
+        <div>
+          <span class="text-navy font-medium block">${d.category}</span>
+          <span class="text-xs text-gray-500">${monthLabel}${d.total_amount ? ' · R' + Number(d.total_amount).toLocaleString() : ''}</span>
+        </div>
+        <span class="learn-more">Download →</span>
+      </button>`;
+  }).join('');
+
+  container.querySelectorAll('[data-owner-doc-download]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newTab = window.open('', '_blank');
+      const { data: signed, error } = await supabaseClient
+        .storage.from('documents').createSignedUrl(btn.dataset.docPath, 300);
+      if (error) { if (newTab) newTab.close(); alert('Could not open file: ' + error.message); return; }
+      if (newTab) { newTab.location.href = signed.signedUrl; } else { window.location.href = signed.signedUrl; }
+    });
+  });
 }
 
 async function loadDocs(table, elementId, ownerId, ownerColumn = 'owner_id') {
