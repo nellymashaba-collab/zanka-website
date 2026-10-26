@@ -34,6 +34,15 @@ Adds everything that happens **before** a Draft lease exists: vacancy → public
 - The full flow was driven in headless Chrome against a mocked backend: 50 checks covering vacancy creation, the 6-step application, upload retry, admin scoring, offer/decline emails, the tenant-account hand-over, Lease Wizard pre-fill and link-back, phone-width layout, and that HTML typed by an applicant is never executed in the admin page.
 - **Not yet tested against your live Supabase project.** In particular, Supabase Storage's own checks on anonymous uploads should be confirmed on staging with one real test application.
 
+## Listing photos (025)
+
+`025_listing_photos.sql` adds photos to vacancies. Run it in the SQL editor after 024. It is safe to re-run; if you ever re-run 024, run 025 again afterwards.
+
+- Photos live in a **public** bucket, `listing-photos`, because anyone viewing a listing should see them. Only admins can upload, replace or delete. Applicants' documents remain in the separate private bucket.
+- In the vacancy form: add up to 20 photos, reorder by dragging or with the arrows, choose a cover, remove. Photos are shrunk in the browser to 1600px on the long side (about 200–400 KB) before upload, so listings load quickly on mobile data.
+- Photos added and then abandoned (form closed without saving) are deleted. Photos removed from a listing are deleted when the listing is saved.
+- Public page: the cover photo on each card, a swipeable gallery with arrows, thumbnails and keyboard support on the unit page.
+
 ## Design decisions worth knowing
 
 - **Separate `rental_*` tables.** The existing `applications`, `listings` and `viewings` tables belong to the estate-agent partner workspace; they were left alone.

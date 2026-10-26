@@ -122,6 +122,21 @@
       <div><label class="field-label" for="vf-max-occupants">Maximum occupants</label><input id="vf-max-occupants" type="number" min="1" class="field"></div>
       <div class="sm:col-span-2"><label class="field-label" for="vf-pets">Pets policy</label><input id="vf-pets" class="field" value="No pets"></div>
       <div class="sm:col-span-2"><label class="field-label" for="vf-features">Features (one per line)</label><textarea id="vf-features" rows="4" class="field" placeholder="Open-plan lounge and kitchen&#10;Bathroom with shower and bath&#10;Washer and dryer included&#10;Access-controlled security"></textarea></div>
+      <div class="sm:col-span-2">
+        <div class="flex items-end justify-between gap-3 mb-2">
+          <div>
+            <p class="field-label !mb-0">Photos</p>
+            <p class="text-xs text-gray-400">Up to 20. The first photo is the cover. Drag, or use the arrows, to reorder. Photos are resized before upload.</p>
+          </div>
+          <label class="btn btn-outline-navy !py-2 !px-4 text-sm cursor-pointer flex-shrink-0">
+            + Add photos
+            <input id="vf-photos-input" type="file" accept="image/*" multiple class="sr-only">
+          </label>
+        </div>
+        <p id="vf-photos-progress" class="hidden text-sm text-gray-500 mb-2" aria-live="polite"></p>
+        <div id="vf-photos" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+        <p class="text-xs text-gray-400 mt-2">Avoid photos that show the unit number, the street name or anything personal.</p>
+      </div>
       <div class="sm:col-span-2"><label class="field-label" for="vf-description">Description</label><textarea id="vf-description" rows="4" class="field" placeholder="Nearby transport, schools, shops, commute times"></textarea></div>
     </div>
     <p id="vacancy-error" class="hidden mt-4 text-sm text-red-600"></p>

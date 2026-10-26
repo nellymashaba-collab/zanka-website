@@ -19,6 +19,12 @@ let vacancies = [];
 let applications = [];
 let openApp = null;       // application currently in the modal
 let editingVacancyId = null;
+// Photos being edited in the vacancy form. Files go straight to the public
+// 'listing-photos' bucket as they are added, under the vacancy's id; they
+// only become part of the listing when the vacancy is saved.
+let photoState = { vacancyId: null, photos: [], original: [], uploaded: [], saved: false, busy: false };
+const PHOTO_BUCKET = 'listing-photos';
+const MAX_PHOTOS = 20;
 
 const CLOSED = ['Lease created', 'Declined', 'Withdrawn'];
 const $ = (id) => document.getElementById(id);
@@ -47,15 +53,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function wireStatic() {
-  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close).classList.add('hidden')));
+  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(b.dataset.close)));
   ['vacancy-modal', 'app-modal', 'settings-modal'].forEach((id) => {
-    $(id).addEventListener('click', (e) => { if (e.target.id === id) $(id).classList.add('hidden'); });
+    $(id).addEventListener('click', (e) => { if (e.target.id === id) closeModal(id); });
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') ['vacancy-modal', 'app-modal', 'settings-modal'].forEach((id) => $(id).classList.add('hidden'));
+    if (e.key === 'Escape') ['vacancy-modal', 'app-modal', 'settings-modal'].forEach((id) => { if (!$(id).classList.contains('hidden')) closeModal(id); });
   });
   $('btn-new-vacancy').addEventListener('click', () => openVacancyForm(null));
   $('vacancy-form').addEventListener('submit', saveVacancy);
+  $('vf-photos-input').addEventListener('change', (e) => { addPhotos([...e.target.files]); e.target.value = ''; });
   $('btn-settings').addEventListener('click', openSettings);
   $('settings-banner-open').addEventListener('click', openSettings);
   $('settings-form').addEventListener('submit', saveSettings);
@@ -121,7 +128,9 @@ function renderVacancies() {
     const live = applications.filter((a) => a.vacancy_id === v.id && !CLOSED.includes(a.status)).length;
     const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}apply.html?vacancy=${v.id}`;
     return `<tr class="border-b border-gray-100 last:border-0 align-top">
-      <td class="py-3 px-3"><p class="font-semibold text-navy">${esc(v.title)}</p><p class="text-xs text-gray-500">${esc(v.area)}</p></td>
+      <td class="py-3 px-3"><div class="flex items-center gap-3">
+        ${(v.photos || []).length ? `<img src="${esc(photoUrl(v.photos[0].path))}" alt="" class="w-14 h-10 rounded-md object-cover flex-shrink-0 bg-offwhite" loading="lazy">` : '<span class="w-14 h-10 rounded-md bg-offwhite flex-shrink-0 flex items-center justify-center text-[10px] text-gray-400">No photo</span>'}
+        <div><p class="font-semibold text-navy">${esc(v.title)}</p><p class="text-xs text-gray-500">${esc(v.area)}${(v.photos || []).length ? ` · ${v.photos.length} photo${v.photos.length === 1 ? '' : 's'}` : ''}</p></div></div></td>
       <td class="py-3 px-3 text-gray-600">${esc(v.properties?.address || v.properties?.name || '')}</td>
       <td class="py-3 px-3 text-right">${money(v.monthly_rent)}</td>
       <td class="py-3 px-3">${dt(v.available_from)}${v.applications_close_at ? `<p class="text-xs text-gray-400">Closes ${dtt(v.applications_close_at)}</p>` : ''}</td>
@@ -156,6 +165,10 @@ function renderVacancyFilter() {
 
 function openVacancyForm(id) {
   editingVacancyId = id;
+  const existing = (vacancies.find((x) => x.id === id) || {}).photos || [];
+  photoState = { vacancyId: id || crypto.randomUUID(), photos: existing.map((p) => ({ ...p })), original: existing.map((p) => p.path), uploaded: [], saved: false, busy: false };
+  $('vf-photos-progress').classList.add('hidden');
+  renderPhotos();
   const v = vacancies.find((x) => x.id === id) || {};
   $('vacancy-modal-title').textContent = id ? 'Edit vacancy' : 'New vacancy';
   $('vf-property').innerHTML = '<option value="">Select a property</option>' +
@@ -204,7 +217,13 @@ async function saveVacancy(e) {
     pets_policy: $('vf-pets').value.trim() || 'No pets',
     features: $('vf-features').value.split('\n').map((s) => s.trim()).filter(Boolean),
     description: $('vf-description').value.trim() || null,
+    photos: photoState.photos.map(({ path, width, height }) => ({ path, width, height })),
   };
+  if (photoState.busy) {
+    $('vacancy-error').textContent = 'Photos are still uploading. Please wait a moment and save again.';
+    $('vacancy-error').classList.remove('hidden');
+    return;
+  }
   if (!row.property_id || !row.title || !(row.monthly_rent > 0)) {
     $('vacancy-error').textContent = 'Property, title and rent are required.';
     $('vacancy-error').classList.remove('hidden');
@@ -214,13 +233,18 @@ async function saveVacancy(e) {
 
   const q = editingVacancyId
     ? supabaseClient.from('rental_vacancies').update(row).eq('id', editingVacancyId)
-    : supabaseClient.from('rental_vacancies').insert([{ ...row, created_by: currentUser.id }]);
+    : supabaseClient.from('rental_vacancies').insert([{ ...row, id: photoState.vacancyId, created_by: currentUser.id }]);
   const { error } = await q;
   if (error) {
     $('vacancy-error').textContent = error.message;
     $('vacancy-error').classList.remove('hidden');
     return;
   }
+  // Saved: delete files of photos that were removed from the listing.
+  const kept = new Set(photoState.photos.map((p) => p.path));
+  const orphaned = [...photoState.original, ...photoState.uploaded].filter((path) => !kept.has(path));
+  if (orphaned.length) await supabaseClient.storage.from(PHOTO_BUCKET).remove(orphaned);
+  photoState.saved = true;
   $('vacancy-modal').classList.add('hidden');
   await loadAll();
 }
@@ -697,4 +721,145 @@ async function purgeExpiredDocuments() {
   }
   alert(`Deleted documents for ${done} application(s).`);
   await loadAll();
+}
+
+
+/* ================================================================
+   LISTING PHOTOS (vacancy form)
+   ================================================================ */
+function closeModal(id) {
+  $(id).classList.add('hidden');
+  if (id === 'vacancy-modal') discardUnsavedPhotos();
+}
+
+// Closing the form without saving: delete photos uploaded in this session,
+// so no unused files are left in public storage.
+function discardUnsavedPhotos() {
+  if (photoState.saved || !photoState.uploaded.length) return;
+  const paths = photoState.uploaded;
+  photoState.uploaded = [];
+  supabaseClient.storage.from(PHOTO_BUCKET).remove(paths);
+}
+
+function photoUrl(path) {
+  return supabaseClient.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+// Decode any photo the browser can read (Safari also reads iPhone HEIC),
+// shrink it so its long side is at most 1600px, and re-encode as JPEG.
+// A 5 MB phone photo becomes roughly 200–400 KB.
+async function resizePhoto(file, maxSide = 1600, quality = 0.82) {
+  let source;
+  try {
+    source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    source = await new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`${file.name} could not be read. Please use a JPG or PNG photo.`)); };
+      img.src = url;
+    });
+  }
+  const w0 = source.width || source.naturalWidth;
+  const h0 = source.height || source.naturalHeight;
+  const scale = Math.min(1, maxSide / Math.max(w0, h0));
+  const width = Math.round(w0 * scale);
+  const height = Math.round(h0 * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, 0, 0, width, height);
+  if (source.close) source.close();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw new Error(`${file.name} could not be converted.`);
+  return { blob, width, height };
+}
+
+async function addPhotos(files) {
+  const images = files.filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+  const room = MAX_PHOTOS - photoState.photos.length;
+  if (!images.length) return;
+  if (room <= 0) return showPhotoProgress(`This listing already has ${MAX_PHOTOS} photos. Remove one to add another.`, true);
+  const batch = images.slice(0, room);
+  const errors = [];
+  photoState.busy = true;
+  for (let i = 0; i < batch.length; i++) {
+    const file = batch[i];
+    showPhotoProgress(`Uploading photo ${i + 1} of ${batch.length}…`);
+    try {
+      const { blob, width, height } = await resizePhoto(file);
+      const path = `${photoState.vacancyId}/${crypto.randomUUID()}.jpg`;
+      const { error } = await supabaseClient.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false });
+      if (error) throw new Error(`${file.name}: ${error.message}`);
+      photoState.uploaded.push(path);
+      photoState.photos.push({ path, width, height });
+      renderPhotos();
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+  photoState.busy = false;
+  if (images.length > room) errors.push(`Only ${room} more photo${room === 1 ? '' : 's'} fit (maximum ${MAX_PHOTOS}).`);
+  if (errors.length) showPhotoProgress(errors.join(' '), true);
+  else showPhotoProgress(`${batch.length} photo${batch.length === 1 ? '' : 's'} added. Save the vacancy to publish them.`);
+}
+
+function showPhotoProgress(text, isError) {
+  const el = $('vf-photos-progress');
+  el.textContent = text;
+  el.classList.remove('hidden', 'text-red-600', 'text-gray-500');
+  el.classList.add(isError ? 'text-red-600' : 'text-gray-500');
+}
+
+function movePhoto(from, to) {
+  const list = photoState.photos;
+  if (to < 0 || to >= list.length || from === to) return;
+  const [item] = list.splice(from, 1);
+  list.splice(to, 0, item);
+  renderPhotos();
+}
+
+function renderPhotos() {
+  const grid = $('vf-photos');
+  const list = photoState.photos;
+  if (!list.length) {
+    grid.innerHTML = '<p class="col-span-full rounded-xl border border-dashed border-gray-300 py-8 text-center text-sm text-gray-400">No photos yet. Listings with good photos attract far more serious applicants.</p>';
+    return;
+  }
+  grid.innerHTML = list.map((p, i) => `
+    <figure class="photo-tile group relative rounded-xl overflow-hidden border ${i === 0 ? 'border-gold ring-2 ring-gold/40' : 'border-gray-200'} bg-offwhite" draggable="true" data-index="${i}">
+      <img src="${esc(photoUrl(p.path))}" alt="Photo ${i + 1}" class="w-full aspect-[4/3] object-cover pointer-events-none" loading="lazy">
+      ${i === 0 ? '<span class="absolute top-2 left-2 pill bg-gold text-navy-deep">Cover</span>' : ''}
+      <figcaption class="flex items-center justify-between gap-1 px-1.5 py-1 bg-white text-xs">
+        <span class="flex">
+          <button type="button" data-move="${i}:-1" class="px-1.5 py-1 rounded hover:bg-offwhite disabled:opacity-30" ${i === 0 ? 'disabled' : ''} aria-label="Move left">&larr;</button>
+          <button type="button" data-move="${i}:1" class="px-1.5 py-1 rounded hover:bg-offwhite disabled:opacity-30" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Move right">&rarr;</button>
+        </span>
+        ${i === 0 ? '' : `<button type="button" data-cover="${i}" class="px-1.5 py-1 rounded text-navy font-semibold hover:bg-offwhite" title="Make this the cover photo">Cover</button>`}
+        <button type="button" data-remove-photo="${i}" class="w-7 h-7 rounded text-red-700 hover:bg-red-50 text-base leading-none" title="Remove photo" aria-label="Remove photo">&times;</button>
+      </figcaption>
+    </figure>`).join('');
+
+  grid.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', () => {
+    const [i, d] = b.dataset.move.split(':').map(Number);
+    movePhoto(i, i + d);
+  }));
+  grid.querySelectorAll('[data-cover]').forEach((b) => b.addEventListener('click', () => movePhoto(Number(b.dataset.cover), 0)));
+  grid.querySelectorAll('[data-remove-photo]').forEach((b) => b.addEventListener('click', () => {
+    photoState.photos.splice(Number(b.dataset.removePhoto), 1);
+    renderPhotos();
+  }));
+
+  // Drag and drop to reorder (desktop).
+  let dragFrom = null;
+  grid.querySelectorAll('.photo-tile').forEach((tile) => {
+    tile.addEventListener('dragstart', (e) => { dragFrom = Number(tile.dataset.index); e.dataTransfer.effectAllowed = 'move'; tile.classList.add('opacity-50'); });
+    tile.addEventListener('dragend', () => tile.classList.remove('opacity-50'));
+    tile.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    tile.addEventListener('drop', (e) => { e.preventDefault(); if (dragFrom !== null) movePhoto(dragFrom, Number(tile.dataset.index)); dragFrom = null; });
+  });
 }
