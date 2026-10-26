@@ -36,6 +36,52 @@ const CORS_HEADERS = {
 
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// Every value placed in an email body is escaped. Names, addresses,
+// maintenance titles and review notes are typed by users, and without
+// this anyone could inject links or markup into Zanka's emails.
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+// ---------------------------------------------------------------------
+// WHO IS CALLING, AND WHAT MAY THEY TRIGGER?
+// This function runs with the service role, sends email in Zanka's name
+// and writes OTPs, so it must not trust the caller. Every request must
+// carry a logged-in user's token (or the service role key, for scheduled
+// jobs). The public anon key alone is rejected. Each event then checks
+// the caller is allowed to trigger it for THAT lease/document/request:
+//   admin / service role ... everything
+//   lease signer ........... next-signature request + fully-executed, own lease only
+//   tenant ................. "maintenance request logged", own request only
+//   partner ................ own document submissions; inspection signature
+//                            requests for inspections they ran or properties
+//                            assigned to them
+// ---------------------------------------------------------------------
+async function identifyCaller(req) {
+  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const apikey = (req.headers.get('apikey') || '').trim();
+  if (SERVICE_ROLE_KEY && (token === SERVICE_ROLE_KEY || apikey === SERVICE_ROLE_KEY)) {
+    return { kind: 'service', id: null, role: 'service' };
+  }
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user) return null; // e.g. the anon key, or an expired session
+  const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', data.user.id).single();
+  return { kind: 'user', id: data.user.id, role: profile?.role || null };
+}
+
+const isStaff = (caller) => caller.kind === 'service' || caller.role === 'admin';
+
+function forbidden(message) {
+  return new Response(JSON.stringify({ error: message }), { status: 403, headers: CORS_HEADERS });
+}
+
+async function isLeaseParty(caller, lease) {
+  if (caller.id && (caller.id === lease.tenant_id || caller.id === lease.guarantor_id)) return true;
+  const ownerId = await resolveEffectiveOwnerId(lease.property_id);
+  return !!ownerId && caller.id === ownerId;
+}
+
 // WhatsApp via Twilio — optional. Every call here is wrapped so that
 // if these secrets aren't set yet (Twilio/template approval is a
 // multi-day external process, not something code alone can finish),
@@ -390,7 +436,7 @@ async function generateAndStoreExecutedLease(leaseId, lease, signatures) {
 // the caller (a tenant's own browser session, for the signing flow) has
 // no direct UPDATE policy on `leases` itself — this function is the
 // privileged step that flow delegates to.
-async function handleLeaseEvent(eventType, leaseId, payload) {
+async function handleLeaseEvent(eventType, leaseId, payload, caller) {
   if (!leaseId) {
     return new Response(JSON.stringify({ error: 'lease_id is required for lease_event' }), { status: 400, headers: CORS_HEADERS });
   }
@@ -410,6 +456,18 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
     throw new Error(`Could not load lease ${leaseId}: ${leaseError?.message || 'not found'}`);
   }
 
+  // Signers may only move THEIR OWN lease's signing along; everything
+  // else (FICA, escalations, renewals) is staff-only.
+  if (!isStaff(caller)) {
+    const signerEvents = ['lease_signature_request', 'lease_fully_executed'];
+    if (!signerEvents.includes(eventType) || !(await isLeaseParty(caller, lease))) {
+      return forbidden('You are not allowed to send this lease notification.');
+    }
+    if (eventType === 'lease_signature_request' && !payload.issue_otp_for_signature_id) {
+      return forbidden('Signers can only request the next signature in the sequence.');
+    }
+  }
+
   const emailsToSend = [];
 
   if (eventType === 'lease_fica_approved') {
@@ -418,8 +476,8 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
         to: lease.tenant.email,
         subject: 'Your FICA documents have been approved',
         html: `
-          <p>Hi ${lease.tenant.full_name || 'there'},</p>
-          <p>Your FICA documents for ${lease.properties?.address || 'your property'} have been approved. Your lease will be sent for signature shortly.</p>
+          <p>Hi ${esc(lease.tenant.full_name || 'there')},</p>
+          <p>Your FICA documents for ${esc(lease.properties?.address || 'your property')} have been approved. Your lease will be sent for signature shortly.</p>
         `,
       });
     }
@@ -433,6 +491,9 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
 
   else if (eventType === 'lease_signature_request') {
     const role = payload.recipient_role; // 'tenant', 'guarantor', or 'owner'
+    if (!['tenant', 'guarantor', 'owner'].includes(role)) {
+      return new Response(JSON.stringify({ error: 'recipient_role must be tenant, guarantor or owner' }), { status: 400, headers: CORS_HEADERS });
+    }
     let party = null;
     if (role === 'guarantor') party = lease.guarantor;
     else if (role === 'tenant') party = lease.tenant;
@@ -444,7 +505,9 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       }
     }
 
-    let otp = payload.otp;
+    // Only staff may supply a code (the Lease Register's tenant request);
+    // anyone else's would be an attacker choosing the code a tenant receives.
+    let otp = isStaff(caller) ? payload.otp : undefined;
 
     // Still generate/store an OTP for Owner too — even though they
     // never have to type it in (lease-sign.js skips that step for
@@ -454,7 +517,13 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
     // entirely broke that detection — the banner could never appear
     // for Owner since nothing ever set otp_code anymore.
     if (role !== 'tenant' && payload.issue_otp_for_signature_id) {
-      otp = String(Math.floor(100000 + Math.random() * 900000));
+      // The signature row must belong to THIS lease and not be signed yet;
+      // otherwise any caller could reset the code on someone else's lease.
+      const { data: sig } = await supabaseAdmin.from('lease_signatures')
+        .select('id, lease_id, otp_verified').eq('id', payload.issue_otp_for_signature_id).single();
+      if (!sig || String(sig.lease_id) !== String(leaseId)) return forbidden('That signature does not belong to this lease.');
+      if (sig.otp_verified) return forbidden('That party has already signed.');
+      otp = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
       const expires = new Date();
       expires.setHours(expires.getHours() + 48);
       const { error: otpError } = await supabaseAdmin.from('lease_signatures').update({
@@ -475,12 +544,12 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
         to: party.email,
         subject: 'Your lease is ready to sign',
         html: `
-          <p>Hi ${party.full_name || 'there'},</p>
-          <p>Your lease for ${lease.properties?.address || 'the property'} is ready for your ${roleLabel}.</p>
+          <p>Hi ${esc(party.full_name || 'there')},</p>
+          <p>Your lease for ${esc(lease.properties?.address || 'the property')} is ready for your ${esc(roleLabel)}.</p>
           ${role === 'owner'
             ? ''
-            : `<p><strong>Your verification code:</strong> ${otp || '(see previous email)'}</p>`}
-          <p><a href="https://zankagroup.co.za/lease-sign.html?lease=${leaseId}">Sign your lease</a></p>
+            : `<p><strong>Your verification code:</strong> ${esc(otp || '(see previous email)')}</p>`}
+          <p><a href="https://zankagroup.co.za/lease-sign.html?lease=${esc(leaseId)}">Sign your lease</a></p>
           ${role === 'owner' ? '' : '<p>This code expires in 48 hours.</p>'}
         `,
       });
@@ -541,7 +610,7 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
         emailsToSend.push({
           to: p.email,
           subject: 'Lease fully executed',
-          html: `<p>Hi ${p.full_name || 'there'},</p><p>The lease for ${lease.properties?.address || 'the property'} has been signed by all parties and is now Active.</p>`,
+          html: `<p>Hi ${esc(p.full_name || 'there')},</p><p>The lease for ${esc(lease.properties?.address || 'the property')} has been signed by all parties and is now Active.</p>`,
         });
       }
     });
@@ -574,10 +643,10 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       to: p.email,
       subject: subjectMap[stage] || 'Rent Increase Notice',
       html: `
-        <p>Hi ${p.full_name || 'there'},</p>
+        <p>Hi ${esc(p.full_name || 'there')},</p>
         <p>${stage === 'effective'
-          ? `Your new monthly rent for ${lease.properties?.address || 'the property'} is now R${Number(escalation.new_rental_amount).toLocaleString()}, effective today.`
-          : `The rent for ${lease.properties?.address || 'the property'} is scheduled to increase to R${Number(escalation.new_rental_amount).toLocaleString()} on ${escalation.effective_date}.`}</p>
+          ? `Your new monthly rent for ${esc(lease.properties?.address || 'the property')} is now R${esc(Number(escalation.new_rental_amount).toLocaleString())}, effective today.`
+          : `The rent for ${esc(lease.properties?.address || 'the property')} is scheduled to increase to R${esc(Number(escalation.new_rental_amount).toLocaleString())} on ${esc(escalation.effective_date)}.`}</p>
       `,
     }));
   }
@@ -594,10 +663,10 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
       to: p.email,
       subject: isRollover ? 'Lease moved to month-to-month' : 'Your lease is coming up for renewal',
       html: `
-        <p>Hi ${p.full_name || 'there'},</p>
+        <p>Hi ${esc(p.full_name || 'there')},</p>
         <p>${isRollover
-          ? `The fixed-term lease for ${lease.properties?.address || 'the property'} has now moved to a month-to-month arrangement, as no renewal or termination was recorded before the end date.`
-          : `The lease for ${lease.properties?.address || 'the property'} is due to expire on ${lease.end_date}. Please contact Zanka Group regarding renewal.`}</p>
+          ? `The fixed-term lease for ${esc(lease.properties?.address || 'the property')} has now moved to a month-to-month arrangement, as no renewal or termination was recorded before the end date.`
+          : `The lease for ${esc(lease.properties?.address || 'the property')} is due to expire on ${esc(lease.end_date)}. Please contact Zanka Group regarding renewal.`}</p>
       `,
     }));
   }
@@ -611,7 +680,7 @@ async function handleLeaseEvent(eventType, leaseId, payload) {
 // tenant/owner, not the signer themselves), and confirming an
 // inspection genuinely exists before emailing anyone needs to bypass
 // RLS from the caller's perspective safely.
-async function handleInspectionEvent(eventType, inspectionId, payload) {
+async function handleInspectionEvent(eventType, inspectionId, payload, caller) {
   if (!inspectionId) {
     return new Response(JSON.stringify({ error: 'inspection_id is required for inspection_event' }), { status: 400, headers: CORS_HEADERS });
   }
@@ -630,10 +699,26 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
     throw new Error(`Could not load inspection ${inspectionId}: ${inspError?.message || 'not found'}`);
   }
 
+  if (!isStaff(caller)) {
+    let allowed = false;
+    if (caller.role === 'partner') {
+      allowed = inspection.inspector_id === caller.id;
+      if (!allowed) {
+        const { data: assigned } = await supabaseAdmin.from('partner_property_assignments')
+          .select('id').eq('partner_id', caller.id).eq('property_id', inspection.property_id).limit(1);
+        allowed = !!(assigned && assigned.length);
+      }
+    }
+    if (!allowed) return forbidden('You are not allowed to request signatures for this inspection.');
+  }
+
   const emailsToSend = [];
 
   if (eventType === 'inspection_signature_request') {
     const role = payload.recipient_role; // 'tenant' or 'owner'
+    if (!['tenant', 'owner'].includes(role)) {
+      return new Response(JSON.stringify({ error: 'recipient_role must be tenant or owner' }), { status: 400, headers: CORS_HEADERS });
+    }
     let party = null;
     let otp = null;
     const expires = new Date();
@@ -644,7 +729,7 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
       if (!tenantId) throw new Error('This inspection has no lease/tenant attached.');
       const { data: tenant } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', tenantId).single();
       party = tenant;
-      otp = String(Math.floor(100000 + Math.random() * 900000));
+      otp = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
       await supabaseAdmin.from('lease_inspections').update({
         tenant_otp_code: otp, tenant_otp_expires_at: expires.toISOString(),
       }).eq('id', inspectionId);
@@ -653,7 +738,7 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
       if (!ownerId) throw new Error('This inspection has no property owner resolvable.');
       const { data: owner } = await supabaseAdmin.from('profiles').select('email, full_name').eq('id', ownerId).single();
       party = owner;
-      otp = String(Math.floor(100000 + Math.random() * 900000));
+      otp = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
       await supabaseAdmin.from('lease_inspections').update({
         owner_otp_code: otp, owner_otp_expires_at: expires.toISOString(),
       }).eq('id', inspectionId);
@@ -665,10 +750,10 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
       to: party.email,
       subject: 'Inspection report ready for your signature',
       html: `
-        <p>Hi ${party.full_name || 'there'},</p>
-        <p>An inspection report for ${inspection.properties?.address || 'your property'} is ready for your review and signature.</p>
-        <p><strong>Your verification code:</strong> ${otp}</p>
-        <p><a href="https://zankagroup.co.za/inspection-history.html?id=${inspectionId}">Review and sign</a></p>
+        <p>Hi ${esc(party.full_name || 'there')},</p>
+        <p>An inspection report for ${esc(inspection.properties?.address || 'your property')} is ready for your review and signature.</p>
+        <p><strong>Your verification code:</strong> ${esc(otp)}</p>
+        <p><a href="https://zankagroup.co.za/inspection-history.html?id=${esc(inspectionId)}">Review and sign</a></p>
         <p>This code expires in 48 hours.</p>
       `,
     });
@@ -682,7 +767,7 @@ async function handleInspectionEvent(eventType, inspectionId, payload) {
 // Runs with the service role client for the same reason as the other
 // handlers — reading the tenant's/owner's contact details needs to
 // bypass RLS safely from a privileged server context.
-async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
+async function handleMaintenanceEvent(eventType, maintenanceRequestId, caller) {
   if (!maintenanceRequestId) {
     return new Response(JSON.stringify({ error: 'maintenance_request_id is required' }), { status: 400, headers: CORS_HEADERS });
   }
@@ -697,6 +782,11 @@ async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
     throw new Error(`Could not load maintenance request ${maintenanceRequestId}: ${reqError?.message || 'not found'}`);
   }
 
+  if (!isStaff(caller)) {
+    const ownRequest = eventType === 'maintenance_request_created' && caller.id === request.tenant_id;
+    if (!ownRequest) return forbidden('You are not allowed to send this maintenance notification.');
+  }
+
   const emailsToSend = [];
   const address = request.properties?.address || 'your property';
 
@@ -705,7 +795,7 @@ async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
       emailsToSend.push({
         to: request.tenant.email,
         subject: 'Your maintenance request has been logged',
-        html: `<p>Hi ${request.tenant.full_name || 'there'},</p><p>Your maintenance request "${request.title}" for ${address} has been logged and is now in the queue. We'll update you once work begins.</p>`,
+        html: `<p>Hi ${esc(request.tenant.full_name || 'there')},</p><p>Your maintenance request "${esc(request.title)}" for ${esc(address)} has been logged and is now in the queue. We'll update you once work begins.</p>`,
       });
     }
     if (request.tenant?.phone) {
@@ -726,7 +816,7 @@ async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
         emailsToSend.push({
           to: owner.email,
           subject: 'New maintenance request logged',
-          html: `<p>Hi ${owner.full_name || 'there'},</p><p>A new maintenance request "${request.title}" has been logged for ${address}.</p>`,
+          html: `<p>Hi ${esc(owner.full_name || 'there')},</p><p>A new maintenance request "${esc(request.title)}" has been logged for ${esc(address)}.</p>`,
         });
       }
     }
@@ -737,7 +827,7 @@ async function handleMaintenanceEvent(eventType, maintenanceRequestId) {
       emailsToSend.push({
         to: request.tenant.email,
         subject: 'Your maintenance request has been completed',
-        html: `<p>Hi ${request.tenant.full_name || 'there'},</p><p>The maintenance work for "${request.title}" at ${address} has been completed. Thank you for your patience.</p>`,
+        html: `<p>Hi ${esc(request.tenant.full_name || 'there')},</p><p>The maintenance work for "${esc(request.title)}" at ${esc(address)} has been completed. Thank you for your patience.</p>`,
       });
     }
     if (request.tenant?.phone) {
@@ -769,13 +859,18 @@ Deno.serve(async (req) => {
 
   const { document_id, status, recipient_context, meta_notes, lease_event, lease_id, inspection_event, inspection_id, maintenance_event, maintenance_request_id } = payload;
 
+  const caller = await identifyCaller(req);
+  if (!caller) {
+    return new Response(JSON.stringify({ error: 'Not signed in. Please log in again and retry.' }), { status: 401, headers: CORS_HEADERS });
+  }
+
   // ---------------- Lease Management events ----------------
   // Handled entirely separately from the document-approval flow above —
   // no `documents` row is involved, these read/write `leases` and
   // `lease_signatures` directly.
   if (lease_event) {
     try {
-      return await handleLeaseEvent(lease_event, lease_id, payload);
+      return await handleLeaseEvent(lease_event, lease_id, payload, caller);
     } catch (err) {
       console.error('lease_event error:', err.message);
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
@@ -785,7 +880,7 @@ Deno.serve(async (req) => {
   // ---------------- Inspection signing events ----------------
   if (inspection_event) {
     try {
-      return await handleInspectionEvent(inspection_event, inspection_id, payload);
+      return await handleInspectionEvent(inspection_event, inspection_id, payload, caller);
     } catch (err) {
       console.error('inspection_event error:', err.message);
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
@@ -795,7 +890,7 @@ Deno.serve(async (req) => {
   // ---------------- Maintenance request events ----------------
   if (maintenance_event) {
     try {
-      return await handleMaintenanceEvent(maintenance_event, maintenance_request_id);
+      return await handleMaintenanceEvent(maintenance_event, maintenance_request_id, caller);
     } catch (err) {
       console.error('maintenance_event error:', err.message);
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: CORS_HEADERS });
@@ -824,6 +919,15 @@ Deno.serve(async (req) => {
       throw new Error(`Could not load document ${document_id}: ${docError?.message || 'not found'}`);
     }
 
+    // Partners may only announce their OWN document, and only in the state
+    // it is actually in (submitted for review, or a self-issued invoice
+    // that is already Approved). Rejections and approvals are staff-only.
+    if (!isStaff(caller)) {
+      const own = caller.id && doc.uploaded_by === caller.id;
+      const allowedStatus = ['Pending Approval', 'Approved'].includes(status) && doc.status === status;
+      if (!own || !allowedStatus) return forbidden('You are not allowed to send this document notification.');
+    }
+
     // Build a LIST of emails to send, rather than picking exactly one.
     // This is what lets a single Rent/Utility Invoice approval notify
     // both the tenant and the owner from one Edge Function call, while
@@ -836,13 +940,13 @@ Deno.serve(async (req) => {
         to: ADMIN_EMAIL,
         subject: `New ${doc.category} awaiting approval`,
         html: `
-          <p>${doc.uploader?.full_name || 'A partner'} uploaded a new document requiring review.</p>
+          <p>${esc(doc.uploader?.full_name || 'A partner')} uploaded a new document requiring review.</p>
           <ul>
-            <li><strong>Category:</strong> ${doc.category}</li>
-            <li><strong>Property:</strong> ${doc.properties?.address || '—'}</li>
-            <li><strong>Total:</strong> R${Number(doc.total_amount).toLocaleString()}</li>
+            <li><strong>Category:</strong> ${esc(doc.category)}</li>
+            <li><strong>Property:</strong> ${esc(doc.properties?.address || '—')}</li>
+            <li><strong>Total:</strong> R${esc(Number(doc.total_amount).toLocaleString())}</li>
           </ul>
-          <p>${meta_notes || ''}</p>
+          <p>${esc(meta_notes || '')}</p>
           <p><a href="https://zankagroup.co.za/admin-partner-dms.html">Review in the Admin Dashboard</a></p>
         `,
       });
@@ -856,9 +960,9 @@ Deno.serve(async (req) => {
           to: partnerEmail,
           subject: `Your ${doc.category} submission needs changes`,
           html: `
-            <p>Hi ${doc.uploader?.full_name || 'there'},</p>
-            <p>Your recent ${doc.category} submission was not approved. Feedback from the reviewer:</p>
-            <blockquote>${meta_notes || 'No specific notes were provided.'}</blockquote>
+            <p>Hi ${esc(doc.uploader?.full_name || 'there')},</p>
+            <p>Your recent ${esc(doc.category)} submission was not approved. Feedback from the reviewer:</p>
+            <blockquote>${esc(meta_notes || 'No specific notes were provided.')}</blockquote>
             <p>Please make the necessary corrections and resubmit.</p>
           `,
         });
@@ -883,11 +987,11 @@ Deno.serve(async (req) => {
             to: tenant.email,
             subject: isRentalInvoice ? `Your rental statement is ready` : `A new ${doc.category.toLowerCase()} has been added to your account`,
             html: `
-              <p>Hi ${tenant.full_name || 'there'},</p>
+              <p>Hi ${esc(tenant.full_name || 'there')},</p>
               <p>${isRentalInvoice
-                ? `Your rental statement for ${doc.properties?.address || 'your property'} is now available in your Tenant Portal, under Rental Breakdown.`
-                : `A new ${doc.category} for ${doc.properties?.address || 'your property'} is now available in your Tenant Portal.`}</p>
-              ${doc.total_amount ? `<p><strong>Total:</strong> R${Number(doc.total_amount).toLocaleString()}</p>` : ''}
+                ? `Your rental statement for ${esc(doc.properties?.address || 'your property')} is now available in your Tenant Portal, under Rental Breakdown.`
+                : `A new ${esc(doc.category)} for ${esc(doc.properties?.address || 'your property')} is now available in your Tenant Portal.`}</p>
+              ${doc.total_amount ? `<p><strong>Total:</strong> R${esc(Number(doc.total_amount).toLocaleString())}</p>` : ''}
               <p><a href="https://zankagroup.co.za/tenant-dashboard.html">View in your Tenant Portal</a></p>
             `,
           });
@@ -925,9 +1029,9 @@ Deno.serve(async (req) => {
             to: owner.email,
             subject: `A new ${doc.category.toLowerCase()} has been added to your account`,
             html: `
-              <p>Hi ${owner.full_name || 'there'},</p>
-              <p>A new ${doc.category} for ${doc.properties?.address || 'your property'} is now available in your Owner Portal.</p>
-              ${doc.total_amount ? `<p><strong>Total:</strong> R${Number(doc.total_amount).toLocaleString()}</p>` : ''}
+              <p>Hi ${esc(owner.full_name || 'there')},</p>
+              <p>A new ${esc(doc.category)} for ${esc(doc.properties?.address || 'your property')} is now available in your Owner Portal.</p>
+              ${doc.total_amount ? `<p><strong>Total:</strong> R${esc(Number(doc.total_amount).toLocaleString())}</p>` : ''}
               <p><a href="https://zankagroup.co.za/owner-dashboard.html">View in your Owner Portal</a></p>
             `,
           });
