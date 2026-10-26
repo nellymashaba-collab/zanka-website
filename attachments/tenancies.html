@@ -146,9 +146,12 @@
       <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <h2 class="font-display font-semibold text-navy text-lg mb-1">Tenancy emails</h2>
-          <p class="text-sm text-gray-500">Admin is cc'd on every tenant and owner email. <span id="tn-waiting" class="font-semibold text-red-700"></span></p>
+          <p class="text-sm text-gray-500">Admin is cc'd on every tenant and owner email, and each one is kept as permanent evidence of service. <span id="tn-waiting" class="font-semibold text-red-700"></span></p>
         </div>
-        <button id="btn-send-waiting" class="btn btn-outline-navy !py-2 !px-4 text-sm">Send waiting emails now</button>
+        <div class="flex flex-wrap gap-2">
+          <a href="notice-evidence.html" class="btn btn-outline-navy !py-2 !px-4 text-sm">Evidence register</a>
+          <button id="btn-send-waiting" class="btn btn-outline-navy !py-2 !px-4 text-sm">Send waiting emails now</button>
+        </div>
       </div>
       <div class="overflow-x-auto"><table class="w-full text-left text-sm">
         <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">

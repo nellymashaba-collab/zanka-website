@@ -36,3 +36,29 @@ The master email switch is still in **Tenant Recruitment → Screening settings*
 ## Not included
 
 Monthly invoicing and the PayFast webhook (gap 6) are unchanged. Payments are overdue when `payments.status = 'Pending'` and the due date has passed, so mark payments paid as you do today.
+
+## Evidence of service (029)
+
+Every tenancy email sent to a tenant or an owner is kept as a permanent evidence record. That covers letters of demand, reminders, notice acknowledgements, end-date confirmations, inspection notices, refund statements, and expiry, escalation and month-to-month notices. Each record holds:
+
+- the exact email as sent (sender, recipients, cc, reply-to, subject, HTML and plain text)
+- Resend's message ID and the time Resend accepted it
+- delivery events reported by Resend's signed webhooks: sent, delivered, delayed, bounced, spam complaint
+- a SHA-256 fingerprint of the content, and a hash chain linking each record to the one before it
+
+The records are append-only. The database refuses updates, deletes and truncates for everyone, admins and the service role included. Only the Edge Functions can add records. **Tenancies → Emails & automation → Evidence register** re-checks every fingerprint and the whole chain. Each record opens as a printable "Evidence of service" page (Save as PDF / print), and each sent letter of demand has an **Evidence** button.
+
+Viewing emails and account set-up emails are not kept: they go to applicants and contain private links.
+
+### Deploy
+
+1. SQL Editor: run `029_notice_evidence.sql`.
+2. Edge Functions → `tenancy-automation` → replace the code with the new `supabase/functions/tenancy-automation/index.ts` → Deploy.
+3. Edge Functions → Deploy a new function → name `email-events` → paste `supabase/functions/email-events/index.ts` → Deploy. Then open its settings and switch **off** "Verify JWT" (Resend can't log in; the function checks Resend's signature instead).
+4. Resend → Webhooks → Add webhook:
+   - Endpoint: `https://blhjlsddmwxjchjlfnhk.supabase.co/functions/v1/email-events`
+   - Events: `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`
+   - Copy the **Signing secret** (`whsec_…`).
+5. Supabase → Edge Functions → Secrets → add `RESEND_WEBHOOK_SECRET` = that signing secret.
+
+Emails sent before step 2 have no evidence record. The trail starts with the first notice sent afterwards.

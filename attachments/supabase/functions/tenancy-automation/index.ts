@@ -351,14 +351,31 @@ export function accountEmail(c: { full_name: string; vacancy_title: string; emai
 /* Sending                                                             */
 /* ------------------------------------------------------------------ */
 
-async function sendViaResend(e: Email, replyTo: string) {
+async function sendViaResend(e: Email, replyTo: string): Promise<{ ok: boolean; error?: string; id?: string | null }> {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${resendKey()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: FROM_ADDRESS, to: e.to, cc: e.cc.length ? e.cc : undefined, reply_to: replyTo, subject: e.subject, html: e.html, text: e.text }),
   });
   if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${(await res.text()).slice(0, 300)}` };
-  return { ok: true };
+  let id: string | null = null;
+  try { id = (await res.json())?.id || null; } catch { /* body is optional */ }
+  return { ok: true, id };
+}
+
+// Formal notices to tenants and owners are kept as permanent evidence
+// (029_notice_evidence.sql). Viewing emails go to applicants and carry
+// cancel links, so they are not kept.
+export const keepsEvidence = (event: string, audience: string) =>
+  (audience === 'tenant' || audience === 'owner') && !event.startsWith('viewing_') && event !== 'tenant_account_created';
+
+// deno-lint-ignore no-explicit-any
+async function recordEvidence(db: any, notificationId: number, e: Email, replyTo: string, messageId: string | null) {
+  const { data, error } = await db.rpc('record_notice_evidence', {
+    p_notification_id: notificationId, p_audience: e.audience, p_from: FROM_ADDRESS, p_to: e.to, p_cc: e.cc, p_reply_to: replyTo || null,
+    p_subject: e.subject, p_html: e.html, p_text: e.text, p_message_id: messageId,
+  });
+  return error ? { evidence_id: null, evidence_error: error.message } : { evidence_id: data, evidence_error: null };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -379,7 +396,9 @@ export async function processQueue(db: any, limit = 20) {
         const errors: string[] = [];
         for (const e of emails) {
           const r = await sendViaResend(e, row.n_context.admin_email);
-          recipients.push({ audience: e.audience, to: e.to, cc: e.cc, subject: e.subject, ok: r.ok, error: r.error || null });
+          // The email has gone out; a failure to store evidence is reported but does not fail the send.
+          const ev = r.ok && keepsEvidence(row.n_event, e.audience) ? await recordEvidence(db, row.n_id, e, row.n_context.admin_email, r.id || null) : {};
+          recipients.push({ audience: e.audience, to: e.to, cc: e.cc, subject: e.subject, ok: r.ok, error: r.error || null, message_id: r.id || null, ...ev });
           if (!r.ok) errors.push(`${e.audience}: ${r.error}`);
         }
         if (errors.length) { status = 'failed'; lastError = errors.join(' | '); }
