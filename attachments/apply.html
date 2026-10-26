@@ -37,6 +37,11 @@
   </script>
 
 <link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .no-scrollbar{scrollbar-width:none;-ms-overflow-style:none;}
+  .no-scrollbar::-webkit-scrollbar{display:none;}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .65rem;border-radius:9999px;white-space:nowrap;}
+</style>
 
 </head>
 <body class="bg-offwhite antialiased">
@@ -104,6 +109,17 @@
 <section id="apply-view" class="hidden py-10 md:py-14">
   <div class="max-w-6xl mx-auto px-5 sm:px-8">
     <a href="apply.html" class="text-sm text-gray-500 hover:text-gold">&larr; All available rentals</a>
+
+    <!-- Photo gallery (filled by apply.js when the unit has photos) -->
+    <div id="v-gallery" class="hidden mt-4" aria-roledescription="carousel" aria-label="Photos of this unit">
+      <div class="relative rounded-2xl overflow-hidden bg-navy-deep">
+        <div id="g-track" class="flex overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar" tabindex="0"></div>
+        <button type="button" id="g-prev" class="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 text-navy items-center justify-center shadow hover:bg-white disabled:opacity-0 transition" aria-label="Previous photo">&larr;</button>
+        <button type="button" id="g-next" class="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 text-navy items-center justify-center shadow hover:bg-white disabled:opacity-0 transition" aria-label="Next photo">&rarr;</button>
+        <span id="g-count" class="absolute bottom-3 right-3 pill bg-navy-deep/75 text-white" aria-live="polite"></span>
+      </div>
+      <div id="g-thumbs" class="hidden sm:flex gap-2 mt-3 overflow-x-auto no-scrollbar"></div>
+    </div>
 
     <div class="grid lg:grid-cols-3 gap-8 mt-4">
       <!-- Unit summary -->

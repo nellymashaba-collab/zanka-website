@@ -67,21 +67,27 @@ function renderList() {
     return;
   }
   $('vacancy-list').innerHTML = vacancies.map((v) => `
-    <article class="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col">
+    <article class="rounded-2xl border border-gray-200 bg-white overflow-hidden flex flex-col">
+      <a href="apply.html?vacancy=${encodeURIComponent(v.id)}" class="block bg-offwhite" tabindex="-1" aria-hidden="true">
+        ${coverImg(v)}
+      </a>
+      <div class="p-6 flex flex-col flex-1">
       <p class="eyebrow mb-2">${esc(v.area)}</p>
       <h2 class="font-display font-bold text-navy text-xl mb-3">${esc(v.title)}</h2>
       <p class="font-semibold text-navy text-2xl mb-1">${money(v.monthly_rent)} <span class="text-sm font-normal text-gray-500">per month</span></p>
       <p class="text-sm text-gray-500 mb-4">${v.available_from ? 'Available ' + esc(fmtDate(v.available_from)) : 'Available now'}</p>
       <ul class="text-sm text-gray-600 space-y-1 mb-5">${specLines(v).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
       <a href="apply.html?vacancy=${encodeURIComponent(v.id)}" class="btn btn-primary mt-auto text-center">View and apply</a>
+      </div>
     </article>`).join('');
 }
 
 function specLines(v) {
   const out = [];
-  if (v.bedrooms !== null) out.push(`${v.bedrooms} bedroom${v.bedrooms === 1 ? '' : 's'}`);
-  if (v.bathrooms !== null) out.push(`${Number(v.bathrooms)} bathroom${Number(v.bathrooms) === 1 ? '' : 's'}`);
-  if (v.parking_bays !== null) out.push(`${v.parking_bays} parking bay${v.parking_bays === 1 ? '' : 's'}`);
+  const has = (x) => x !== null && x !== undefined && x !== '' && !Number.isNaN(Number(x));
+  if (has(v.bedrooms)) out.push(`${Number(v.bedrooms)} bedroom${Number(v.bedrooms) === 1 ? '' : 's'}`);
+  if (has(v.bathrooms)) out.push(`${Number(v.bathrooms)} bathroom${Number(v.bathrooms) === 1 ? '' : 's'}`);
+  if (has(v.parking_bays)) out.push(`${Number(v.parking_bays)} parking bay${Number(v.parking_bays) === 1 ? '' : 's'}`);
   (v.features || []).forEach((f) => out.push(f));
   return out;
 }
@@ -104,9 +110,10 @@ function showApplyView() {
     $('v-closes').textContent = `Applications close ${new Date(vacancy.applications_close_at).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short' })}.`;
   }
 
+  renderGallery(vacancy);
   addOccupantRow('', '');
   wireForm();
-  showStep(1);
+  showStep(1, { initial: true });
 }
 
 function wireForm() {
@@ -164,7 +171,7 @@ function addOccupantRow(name, age) {
   $('occupants-list').appendChild(row);
 }
 
-function showStep(n) {
+function showStep(n, opts = {}) {
   step = Math.max(1, Math.min(TOTAL_STEPS, n));
   document.querySelectorAll('[data-step]').forEach((el) => el.classList.toggle('hidden', Number(el.dataset.step) !== step));
   $('step-count').textContent = `Step ${step} of ${TOTAL_STEPS}`;
@@ -176,7 +183,7 @@ function showStep(n) {
   $('form-error').classList.add('hidden');
   if (step === 5) renderDocInputs();
   if (step === 6) prepareConsent();
-  $('apply-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!opts.initial) $('apply-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function showError(msg) {
@@ -421,4 +428,74 @@ async function onSubmit(e) {
     btn.disabled = false; $('btn-back').disabled = false;
     btn.textContent = 'Submit application';
   }
+}
+
+
+/* ---------------- Photos ---------------- */
+const PHOTO_BUCKET = 'listing-photos';
+const photoUrl = (path) => supabaseClient.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+
+function coverImg(v) {
+  const photos = v.photos || [];
+  if (!photos.length) {
+    return `<div class="aspect-[4/3] flex items-center justify-center text-gray-300">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.5Z"/></svg></div>`;
+  }
+  const more = photos.length > 1 ? `<span class="absolute bottom-3 right-3 pill bg-navy-deep/75 text-white">${photos.length} photos</span>` : '';
+  return `<div class="relative"><img src="${esc(photoUrl(photos[0].path))}" alt="${esc(v.title)}" class="w-full aspect-[4/3] object-cover" loading="lazy" decoding="async">${more}</div>`;
+}
+
+function renderGallery(v) {
+  const photos = v.photos || [];
+  if (!photos.length) return;
+  const track = $('g-track');
+  const n = photos.length;
+  track.innerHTML = photos.map((p, i) => `
+    <div class="w-full flex-shrink-0 snap-center" role="group" aria-roledescription="slide" aria-label="Photo ${i + 1} of ${n}">
+      <img src="${esc(photoUrl(p.path))}" alt="${esc(v.title)}, photo ${i + 1} of ${n}" class="w-full aspect-[4/3] sm:aspect-[16/9] object-cover"
+        ${i === 0 ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">
+    </div>`).join('');
+  $('v-gallery').classList.remove('hidden');
+
+  const thumbs = $('g-thumbs');
+  if (n > 1) {
+    thumbs.innerHTML = photos.map((p, i) => `
+      <button type="button" data-go="${i}" class="flex-shrink-0 w-24 rounded-lg overflow-hidden border-2 border-transparent opacity-70 hover:opacity-100 transition" aria-label="Show photo ${i + 1}">
+        <img src="${esc(photoUrl(p.path))}" alt="" class="w-full aspect-[4/3] object-cover" loading="lazy" decoding="async">
+      </button>`).join('');
+    thumbs.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => goTo(Number(b.dataset.go))));
+  } else {
+    thumbs.remove();
+    $('g-prev').remove();
+    $('g-next').remove();
+  }
+
+  const current = () => Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+  function goTo(i) {
+    const target = Math.max(0, Math.min(n - 1, i));
+    track.scrollTo({ left: target * track.clientWidth, behavior: 'smooth' });
+  }
+  function update() {
+    const i = current();
+    $('g-count').textContent = `${i + 1} / ${n}`;
+    if ($('g-prev')) { $('g-prev').disabled = i === 0; $('g-next').disabled = i === n - 1; }
+    document.querySelectorAll('#g-thumbs [data-go]').forEach((b, k) => {
+      b.classList.toggle('border-gold', k === i);
+      b.classList.toggle('opacity-100', k === i);
+      b.classList.toggle('border-transparent', k !== i);
+      b.classList.toggle('opacity-70', k !== i);
+    });
+  }
+  if ($('g-prev')) {
+    $('g-prev').addEventListener('click', () => goTo(current() - 1));
+    $('g-next').addEventListener('click', () => goTo(current() + 1));
+  }
+  track.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(current() - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); goTo(current() + 1); }
+  });
+  let t;
+  track.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(update, 60); }, { passive: true });
+  window.addEventListener('resize', () => goTo(current()));
+  update();
 }

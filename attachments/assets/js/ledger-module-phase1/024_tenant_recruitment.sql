@@ -394,6 +394,9 @@ create trigger rental_applications_status_audit after update of status on public
 
 -- Open vacancies for the public "to let" page. Exposes no property id,
 -- address or owner — only the public listing text.
+-- NOTE: 025_listing_photos.sql replaces this function with a version that
+-- also returns photos. If you ever re-run this file, run 025 again after it.
+drop function if exists public.list_open_rental_vacancies();
 create or replace function public.list_open_rental_vacancies()
 returns table (
   id uuid, title text, area text, description text,
