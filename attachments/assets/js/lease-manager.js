@@ -490,6 +490,8 @@ async function handleWizardSubmit(e) {
         .update({ status: 'Lease created', lease_id: lease.id, tenant_profile_id: tenantId })
         .eq('id', wizardState.rentalApplicationId);
       if (linkError) console.error('Lease created, but the rental application could not be linked:', linkError.message);
+      // The listing is now Let: send the owner's update queued by the database.
+      else supabaseClient.functions.invoke('rental-notifications', { body: {} }).catch(() => {});
     }
 
     successEl.textContent = 'Lease saved as Draft. It now needs FICA approval before it can be sent for signature.';

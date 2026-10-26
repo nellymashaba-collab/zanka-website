@@ -416,6 +416,11 @@ async function onSubmit(e) {
     });
     if (doneErr) throw doneErr;
 
+    // Send the confirmation email (and the owner's update) now. The
+    // database has already queued them, so if this call fails they still
+    // go out the next time the queue is processed.
+    supabaseClient.functions.invoke('rental-notifications', { body: {} }).catch(() => {});
+
     $('apply-card').classList.add('hidden');
     $('vacancy-summary').classList.add('hidden');
     $('success-view').classList.remove('hidden');

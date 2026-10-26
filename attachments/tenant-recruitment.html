@@ -46,6 +46,10 @@
     <button id="settings-banner-open" class="font-semibold underline">Review settings</button>
   </p>
 
+  <p id="emails-off-banner" class="hidden mb-6 rounded-xl bg-red-50 text-red-700 px-4 py-3 text-sm">
+    Automatic emails are switched off: owners and applicants are not being notified. Turn them back on in Screening settings.
+  </p>
+
   <!-- KPIs -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
     <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Open vacancies</p><p id="kpi-open" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
@@ -95,6 +99,26 @@
           <th class="py-2 px-3 font-semibold">Status</th>
         </tr></thead>
         <tbody id="applications-tbody"><tr><td colspan="7" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Email log -->
+  <div class="panel p-6 mt-8">
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Emails</h2>
+        <p class="text-sm text-gray-500">Sent automatically when a listing or application changes. Admin is cc'd on every email. Owners never receive applicants' personal details. <span id="email-log-waiting" class="font-semibold text-red-700"></span></p>
+      </div>
+      <button id="btn-send-emails" class="btn btn-outline-navy !py-2 !px-4 text-sm">Send waiting emails now</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">When</th><th class="py-2 px-3 font-semibold">Email</th>
+          <th class="py-2 px-3 font-semibold">Sent to</th><th class="py-2 px-3 font-semibold">Status</th><th class="py-2 px-3"></th>
+        </tr></thead>
+        <tbody id="email-log-tbody"><tr><td colspan="5" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -246,6 +270,11 @@
       <div><label class="field-label" for="st-conditional">Conditional from score</label><input id="st-conditional" type="number" min="0" max="100" class="field"></div>
       <div><label class="field-label" for="st-offer-hours">Offer valid (hours)</label><input id="st-offer-hours" type="number" min="1" max="336" class="field"></div>
       <div><label class="field-label" for="st-retention">Keep declined documents (days)</label><input id="st-retention" type="number" min="1" max="3650" class="field"></div>
+      <p class="sm:col-span-3 font-semibold text-navy pt-2">Automatic emails</p>
+      <div class="sm:col-span-3 rounded-xl border border-gray-200 p-4 space-y-3">
+        <label class="flex items-start gap-3"><input type="checkbox" id="st-notify" class="mt-0.5"> Email owners and applicants automatically when listings and applications change</label>
+        <div><label class="field-label" for="st-admin-email">Admin email (cc'd on every email; replies come here)</label><input id="st-admin-email" type="email" class="field" placeholder="admin@zankagroup.co.za"></div>
+      </div>
       <div class="sm:col-span-3 rounded-xl border border-gray-200 p-4 space-y-3">
         <label class="flex items-start gap-3"><input type="checkbox" id="st-confirmed" class="mt-0.5"> These values have been confirmed by our property practitioner for this market</label>
         <input id="st-confirmed-note" class="field" placeholder="Who confirmed, and when (e.g. Thato, email 2 Nov 2026)">
