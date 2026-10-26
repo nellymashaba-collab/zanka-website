@@ -244,6 +244,26 @@
   </div>
 </div>
 
+<!-- ============ Viewings modal ============ -->
+<div id="viewings-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
+  <div class="panel p-6 max-w-3xl w-full my-8">
+    <div class="flex items-center justify-between mb-1">
+      <h3 class="font-display font-semibold text-navy text-xl">Viewings</h3>
+      <button type="button" data-close="viewings-modal" class="text-2xl text-gray-400 hover:text-navy" aria-label="Close">&times;</button>
+    </div>
+    <p id="viewings-title" class="text-sm text-gray-500 mb-5"></p>
+    <form id="slot-form" class="grid sm:grid-cols-4 gap-3 items-end text-sm mb-6">
+      <div class="sm:col-span-2"><label class="field-label" for="slot-start">Date and time *</label><input id="slot-start" type="datetime-local" class="field" required></div>
+      <div><label class="field-label" for="slot-duration">Minutes</label><input id="slot-duration" type="number" min="10" max="240" value="30" class="field"></div>
+      <div><label class="field-label" for="slot-capacity">People</label><input id="slot-capacity" type="number" min="1" max="50" value="6" class="field"></div>
+      <div class="sm:col-span-3"><label class="field-label" for="slot-meet">Meeting point (sent only to people who book)</label><input id="slot-meet" class="field" placeholder="e.g. Main gate, Roberts Avenue Mansions"></div>
+      <div><button class="btn btn-primary !py-2.5 text-sm w-full">Add viewing time</button></div>
+      <p id="slot-err" class="hidden sm:col-span-4 text-red-600"></p>
+    </form>
+    <div id="viewings-list" class="space-y-4 text-sm"></div>
+  </div>
+</div>
+
 <!-- ============ Settings modal ============ -->
 <div id="settings-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
   <form id="settings-form" class="panel p-6 max-w-2xl w-full my-8">

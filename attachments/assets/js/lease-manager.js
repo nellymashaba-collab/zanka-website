@@ -675,16 +675,12 @@ async function loadRenewalsDueList() {
   container.querySelectorAll('[data-terminate]').forEach(btn => btn.addEventListener('click', () => recordRenewalDecision(btn.dataset.terminate, 'Terminate')));
 }
 
-// Records the decision. Actually CREATING the new lease for a "Renew"
-// choice, or scheduling the move-out inspection for "Terminate", are
-// meaningfully separate follow-up actions the spec describes — this
-// records the decision itself, which is what stops the automatic
-// month-to-month rollover from firing, and is the piece the cron job
-// checks. Building the "auto-create next lease" / "auto-schedule
-// move-out inspection" flows out is a reasonable next increment, not
-// done here to keep this from growing even further.
+// Records the decision, which stops the automatic month-to-month rollover.
+// "Terminate" opens a move-out case (tenancies.html) for the lease end
+// date; "Month_to_Month" emails the tenant and owner.
 async function recordRenewalDecision(leaseId, renewalType) {
-  const { data: lease } = await supabaseClient.from('leases').select('status, monthly_rent').eq('id', leaseId).single();
+  const { data: lease } = await supabaseClient.from('leases').select('status, monthly_rent, end_date').eq('id', leaseId).single();
+  if (renewalType === 'Terminate' && !confirm('Not renewing: this starts a move-out for the lease end date. The tenant and owner are emailed, and you then book the move-out inspection, settle the deposit and re-list on the Tenancies page. Continue?')) return;
 
   const { error } = await supabaseClient.from('lease_renewals').insert([{
     lease_id: leaseId,
@@ -696,8 +692,14 @@ async function recordRenewalDecision(leaseId, renewalType) {
 
   if (renewalType === 'Month_to_Month') {
     await supabaseClient.from('leases').update({ status: 'Active_Month_to_Month' }).eq('id', leaseId);
+    await supabaseClient.from('tenancy_notifications').insert([{ event_type: 'lease_rolled_over', lease_id: Number(leaseId), requested_by: currentUser.id }]);
   } else if (renewalType === 'Terminate') {
-    await supabaseClient.from('leases').update({ status: 'Expired' }).eq('id', leaseId);
+    // The lease stays Active until the tenancy is closed on the Tenancies
+    // page (after the move-out inspection and deposit refund).
+    const { error: endErr } = await supabaseClient.from('tenancy_endings').insert([{
+      lease_id: Number(leaseId), source: 'not_renewing', end_date: lease?.end_date, created_by: currentUser.id,
+    }]);
+    if (endErr && !/duplicate|unique/i.test(endErr.message)) alert('Decision saved, but the move-out could not be started: ' + endErr.message + '\nStart it from the Tenancies page.');
   }
 
   await supabaseClient.from('lease_audit_logs').insert([{
@@ -705,9 +707,11 @@ async function recordRenewalDecision(leaseId, renewalType) {
     previous_state: lease?.status, new_state: renewalType === 'Renew' ? lease?.status : renewalType,
   }]);
 
+  supabaseClient.functions.invoke('tenancy-automation', { body: { action: 'send' } }).catch(() => {});
   await loadRenewalsDueList();
   await loadRegister();
   await loadKpis();
+  if (renewalType === 'Terminate' && confirm('Move-out started. Open the Tenancies page now?')) location.href = 'tenancies.html#moveouts';
 }
 
 

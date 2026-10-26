@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tenancies | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .panel{background:#fff;border-radius:1rem;box-shadow:0 1px 2px rgba(20,28,48,.05),0 8px 24px -12px rgba(20,28,48,.12);}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .65rem;border-radius:9999px;white-space:nowrap;}
+  .tab[aria-selected="true"]{background:#1F2A44;color:#fff;}
+  .step{border-left:2px solid #E5E7EB;padding-left:1rem;position:relative;}
+  .step::before{content:"";position:absolute;left:-7px;top:.3rem;width:12px;height:12px;border-radius:9999px;background:#E5E7EB;}
+  .step.done::before{background:#16a34a;} .step.now::before{background:#C89B3C;}
+</style>
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+    <div>
+      <a href="admin-dashboard.html" class="text-sm text-gray-500 hover:text-gold">&larr; Admin dashboard</a>
+      <p class="eyebrow mt-3 mb-1">Tenancy management</p>
+      <h1 class="font-display font-bold text-navy text-3xl">Tenancies</h1>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <a href="lease-dashboard.html" class="btn btn-outline-navy !py-2.5 text-sm">Lease register</a>
+      <button id="btn-start-moveout" class="btn btn-primary !py-2.5 text-sm">+ Start a move-out</button>
+    </div>
+  </div>
+
+  <p id="automation-banner" class="hidden mb-6 rounded-xl px-4 py-3 text-sm"></p>
+
+  <nav class="flex flex-wrap gap-2 mb-6" role="tablist">
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="notices">Notices <span data-count="notices" class="ml-1"></span></button>
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="moveouts">Move-outs <span data-count="moveouts" class="ml-1"></span></button>
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="deposits">Deposits</button>
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="arrears">Arrears <span data-count="arrears" class="ml-1"></span></button>
+    <button class="tab btn btn-outline-navy !py-2 !px-4 text-sm" data-tab="emails">Emails &amp; automation</button>
+  </nav>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section data-panel="overview">
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
+      <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">New notices</p><p id="kpi-notices" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+      <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Open move-outs</p><p id="kpi-moveouts" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+      <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Deposits held</p><p id="kpi-deposits" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+      <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Rent overdue</p><p id="kpi-arrears" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+      <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Letters to approve</p><p id="kpi-letters" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+    </div>
+    <div class="grid lg:grid-cols-2 gap-8">
+      <div class="panel p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Needs your attention</h2>
+        <p class="text-sm text-gray-500 mb-4">Deadlines and decisions, most urgent first.</p>
+        <ul id="attention-list" class="space-y-3 text-sm"><li class="text-gray-400">Loading…</li></ul>
+      </div>
+      <div class="panel p-6">
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Coming up</h2>
+        <p class="text-sm text-gray-500 mb-4">Lease ends and rent escalations in the next 6 months. Notices go out automatically.</p>
+        <ul id="upcoming-list" class="space-y-3 text-sm"><li class="text-gray-400">Loading…</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NOTICES ============ -->
+  <section data-panel="notices" class="hidden">
+    <div class="panel p-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-1">Notices from tenants</h2>
+      <p class="text-sm text-gray-500 mb-4">A fixed-term tenant may end the lease on 20 business days' written notice (Consumer Protection Act s14); month to month needs one calendar month. Acknowledging a notice to vacate confirms the end date to the tenant and opens a move-out.</p>
+      <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">Received</th><th class="py-2 px-3 font-semibold">Tenant &amp; property</th><th class="py-2 px-3 font-semibold">Notice</th>
+          <th class="py-2 px-3 font-semibold">Requested end</th><th class="py-2 px-3 font-semibold">Status</th><th class="py-2 px-3"></th></tr></thead>
+        <tbody id="notices-tbody"><tr><td colspan="6" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ MOVE-OUTS ============ -->
+  <section data-panel="moveouts" class="hidden">
+    <div id="moveouts-list" class="space-y-6"><p class="text-gray-400">Loading…</p></div>
+    <details class="mt-8"><summary class="cursor-pointer text-sm font-semibold text-navy">Closed and cancelled move-outs</summary>
+      <div id="moveouts-closed" class="mt-4 space-y-2 text-sm"></div></details>
+  </section>
+
+  <!-- ============ DEPOSITS ============ -->
+  <section data-panel="deposits" class="hidden">
+    <div class="panel p-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-1">Deposit register</h2>
+      <p class="text-sm text-gray-500 mb-4">The Rental Housing Act requires deposits in an interest-bearing account, with the interest belonging to the tenant. Record each deposit and the bank's interest here; deductions need a receipt.</p>
+      <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">Tenant &amp; property</th><th class="py-2 px-3 font-semibold">Held in</th>
+          <th class="py-2 px-3 font-semibold text-right">Required</th><th class="py-2 px-3 font-semibold text-right">Received</th><th class="py-2 px-3 font-semibold text-right">Interest</th>
+          <th class="py-2 px-3 font-semibold text-right">Deducted</th><th class="py-2 px-3 font-semibold text-right">Refunded</th><th class="py-2 px-3 font-semibold text-right">Held now</th><th class="py-2 px-3"></th></tr></thead>
+        <tbody id="deposits-tbody"><tr><td colspan="9" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ ARREARS ============ -->
+  <section data-panel="arrears" class="hidden space-y-8">
+    <div class="panel p-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-1">Overdue rent</h2>
+      <p class="text-sm text-gray-500 mb-4">Reminders go out automatically on day <span data-setting="arrears_reminder_1_days">3</span> and day <span data-setting="arrears_reminder_2_days">7</span>; on day <span data-setting="arrears_demand_days">14</span> a letter of demand is prepared for you to approve. Rent due before <span data-setting="arrears_automation_start">—</span> is listed here but handled by you, not automatically. Record payments in the <a class="text-gold font-semibold hover:underline" href="admin-dashboard.html">Payments</a> section as usual; paid amounts drop off this list.</p>
+      <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">Tenant &amp; property</th><th class="py-2 px-3 font-semibold text-right">Amount</th><th class="py-2 px-3 font-semibold">Was due</th>
+          <th class="py-2 px-3 font-semibold text-right">Days late</th><th class="py-2 px-3 font-semibold">Reminders</th><th class="py-2 px-3 font-semibold">Letter of demand</th></tr></thead>
+        <tbody id="arrears-tbody"><tr><td colspan="6" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="panel p-6">
+      <h2 class="font-display font-semibold text-navy text-lg mb-1">Letters of demand</h2>
+      <p class="text-sm text-gray-500 mb-4">Nothing is sent until you approve it. Sending gives the tenant 20 business days to pay (CPA s14). Check the amount is genuinely unpaid first. Have your attorney or Thato review the wording once before the first one goes out.</p>
+      <div id="letters-list" class="space-y-3 text-sm"><p class="text-gray-400">Loading…</p></div>
+    </div>
+  </section>
+
+  <!-- ============ EMAILS & AUTOMATION ============ -->
+  <section data-panel="emails" class="hidden space-y-8">
+    <div class="panel p-6">
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <div>
+          <h2 class="font-display font-semibold text-navy text-lg mb-1">Daily automation</h2>
+          <p class="text-sm text-gray-500">Once a day: lease-expiry notices (40–80 business days ahead), month-to-month rollover, rent escalations, arrears reminders, deadline alerts, viewing reminders. Safe to run again at any time; nothing is ever sent twice.</p>
+        </div>
+        <button id="btn-run-daily" class="btn btn-primary !py-2 !px-4 text-sm">Run daily checks now</button>
+      </div>
+      <div id="runs-list" class="text-sm"></div>
+    </div>
+    <div class="panel p-6">
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <div>
+          <h2 class="font-display font-semibold text-navy text-lg mb-1">Tenancy emails</h2>
+          <p class="text-sm text-gray-500">Admin is cc'd on every tenant and owner email. <span id="tn-waiting" class="font-semibold text-red-700"></span></p>
+        </div>
+        <button id="btn-send-waiting" class="btn btn-outline-navy !py-2 !px-4 text-sm">Send waiting emails now</button>
+      </div>
+      <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">When</th><th class="py-2 px-3 font-semibold">Email</th><th class="py-2 px-3 font-semibold">Sent to</th><th class="py-2 px-3 font-semibold">Status</th><th class="py-2 px-3"></th></tr></thead>
+        <tbody id="tn-tbody"><tr><td colspan="5" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+    <form id="auto-settings" class="panel p-6 grid sm:grid-cols-3 gap-4 text-sm">
+      <h2 class="sm:col-span-3 font-display font-semibold text-navy text-lg">Automation settings</h2>
+      <label class="sm:col-span-3 flex items-start gap-3"><input type="checkbox" id="as-enabled" class="mt-0.5"> Run the daily lease automation (expiry notices, rollover, escalations, arrears, reminders)</label>
+      <div><label class="field-label" for="as-r1">First reminder after (days)</label><input id="as-r1" type="number" min="1" max="30" class="field"></div>
+      <div><label class="field-label" for="as-r2">Second reminder after (days)</label><input id="as-r2" type="number" min="2" max="45" class="field"></div>
+      <div><label class="field-label" for="as-demand">Letter of demand after (days)</label><input id="as-demand" type="number" min="3" max="90" class="field"></div>
+      <div><label class="field-label" for="as-start">Automatic reminders for rent due from</label><input id="as-start" type="date" class="field"></div>
+      <p class="sm:col-span-2 text-xs text-gray-500 self-end">Earlier arrears stay manual so no tenant gets an automatic reminder about an old balance that may already be settled. Email on/off and the admin address are in Tenant Recruitment → Screening settings.</p>
+      <p id="as-msg" class="hidden sm:col-span-3"></p>
+      <div class="sm:col-span-3"><button class="btn btn-primary !py-2.5 text-sm">Save automation settings</button></div>
+    </form>
+  </section>
+</main>
+
+<!-- ============ Modals ============ -->
+<div id="modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
+  <div class="panel p-6 max-w-xl w-full my-10">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="modal-title" class="font-display font-semibold text-navy text-xl"></h3>
+      <button type="button" data-close-modal class="text-2xl text-gray-400 hover:text-navy" aria-label="Close">&times;</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/tenancies.js"></script>
+</body>
+</html>

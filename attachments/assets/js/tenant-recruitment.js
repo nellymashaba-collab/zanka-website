@@ -55,16 +55,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function wireStatic() {
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(b.dataset.close)));
-  ['vacancy-modal', 'app-modal', 'settings-modal'].forEach((id) => {
+  ['vacancy-modal', 'app-modal', 'settings-modal', 'viewings-modal'].forEach((id) => {
     $(id).addEventListener('click', (e) => { if (e.target.id === id) closeModal(id); });
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') ['vacancy-modal', 'app-modal', 'settings-modal'].forEach((id) => { if (!$(id).classList.contains('hidden')) closeModal(id); });
+    if (e.key === 'Escape') ['vacancy-modal', 'app-modal', 'settings-modal', 'viewings-modal'].forEach((id) => { if (!$(id).classList.contains('hidden')) closeModal(id); });
   });
   $('btn-new-vacancy').addEventListener('click', () => openVacancyForm(null));
   $('vacancy-form').addEventListener('submit', saveVacancy);
   $('vf-photos-input').addEventListener('change', (e) => { addPhotos([...e.target.files]); e.target.value = ''; });
   $('btn-settings').addEventListener('click', openSettings);
+  $('slot-form').addEventListener('submit', addViewingSlot);
   $('settings-banner-open').addEventListener('click', openSettings);
   $('settings-form').addEventListener('submit', saveSettings);
   $('btn-purge').addEventListener('click', purgeExpiredDocuments);
@@ -142,12 +143,14 @@ function renderVacancies() {
       <td class="py-3 px-3">${pill(v.status, STATUS_STYLE[v.status])}</td>
       <td class="py-3 px-3 whitespace-nowrap space-x-3">
         <button class="text-gold font-semibold hover:underline" data-edit-vacancy="${v.id}">Edit</button>
+        <button class="text-navy font-semibold hover:underline" data-viewings="${v.id}">Viewings</button>
         ${v.status === 'Open' ? `<button class="text-navy font-semibold hover:underline" data-copy-link="${esc(link)}">Copy apply link</button>` : ''}
         ${v.status === 'Draft' || v.status === 'Closed' ? `<button class="text-green-700 font-semibold hover:underline" data-set-vacancy="${v.id}:Open">Open</button>` : ''}
         ${v.status === 'Open' ? `<button class="text-gray-500 font-semibold hover:underline" data-set-vacancy="${v.id}:Closed">Close</button>` : ''}
       </td></tr>`;
   }).join('');
   document.querySelectorAll('[data-edit-vacancy]').forEach((b) => b.addEventListener('click', () => openVacancyForm(b.dataset.editVacancy)));
+  document.querySelectorAll('[data-viewings]').forEach((b) => b.addEventListener('click', () => openViewings(b.dataset.viewings)));
   document.querySelectorAll('[data-copy-link]').forEach((b) => b.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(b.dataset.copyLink); b.textContent = 'Copied'; } catch { prompt('Copy this link:', b.dataset.copyLink); }
     setTimeout(() => { b.textContent = 'Copy apply link'; }, 1500);
@@ -592,9 +595,13 @@ async function renderHandover(a) {
     box.innerHTML = `
       <p class="text-gray-700 mb-3">The Lease Wizard needs a tenant account. No account exists for <span class="font-semibold">${esc(a.email)}</span> yet.</p>
       <div class="space-y-2.5">
-        <button id="btn-invite" class="btn btn-primary !py-2 !px-4 text-sm w-full">Email account invitation</button>
+        <button id="btn-create-account" class="btn btn-primary !py-2 !px-4 text-sm w-full">Create tenant account now</button>
+        <p class="text-xs text-gray-500">Uses the details from the application. ${esc(a.full_name || 'The tenant')} gets an email with a link to set their own password.</p>
+        <p id="create-account-msg" class="hidden text-sm"></p>
+        <button id="btn-invite" class="btn btn-outline-navy !py-2 !px-4 text-sm w-full">Or: email an invitation to sign up themselves</button>
         <button id="btn-recheck" class="btn btn-outline-navy !py-2 !px-4 text-sm w-full">They've signed up: check again</button>
       </div>`;
+    $('btn-create-account').addEventListener('click', () => createTenantAccount(a));
     $('btn-invite').addEventListener('click', () => queueEmail('tenant_account_invite', a, `Account invitation emailed to ${a.email} (admin cc'd).`));
     $('btn-recheck').addEventListener('click', () => renderHandover(a));
     return;
@@ -606,6 +613,113 @@ async function renderHandover(a) {
   box.innerHTML = `
     <p class="text-gray-700 mb-3">Tenant account found: <span class="font-semibold">${esc(tenant.full_name)}</span>. The Lease Wizard will open with the property, tenant, rent and deposit filled in; creating the lease also starts KYC.</p>
     <a href="lease-wizard.html?application=${encodeURIComponent(a.id)}" class="btn btn-primary !py-2 !px-4 text-sm w-full text-center block">Create lease in Lease Wizard</a>`;
+}
+
+async function functionError(error) {
+  // supabase-js wraps non-2xx replies; the function's own message is in the body.
+  try { const body = await error.context.json(); if (body?.error) return body.error; } catch { /* not JSON */ }
+  return error.message || 'connection problem';
+}
+
+async function createTenantAccount(a) {
+  const btn = $('btn-create-account');
+  const msg = $('create-account-msg');
+  if (!confirm(`Create a Zanka tenant login for ${a.full_name || a.email} (${a.email})? They'll be emailed a link to set their password.`)) return;
+  btn.disabled = true; btn.textContent = 'Creating…';
+  const { data, error } = await supabaseClient.functions.invoke('tenancy-automation', { body: { action: 'create_tenant_account', application_id: a.id } });
+  btn.disabled = false; btn.textContent = 'Create tenant account now';
+  msg.classList.remove('hidden', 'text-red-600', 'text-green-700', 'text-amber-700');
+  if (error) { msg.textContent = await functionError(error); msg.classList.add('text-red-600'); return; }
+  if (data?.warning) { msg.textContent = data.warning; msg.classList.add('text-amber-700'); toast(data.warning, true); }
+  else toast(data?.existing ? 'An account already existed and is now linked.' : `Account created. ${a.email} has been emailed a set-password link.`);
+  setTimeout(() => renderHandover(a), data?.warning ? 2500 : 0);
+}
+
+/* ================================================================
+   VIEWINGS
+   ================================================================ */
+let viewingsVacancy = null;
+const BOOKING_STYLE = { Booked: 'bg-blue-100 text-blue-700', Attended: 'bg-green-100 text-green-700', 'No-show': 'bg-red-100 text-red-700', Cancelled: 'bg-gray-100 text-gray-500' };
+
+async function openViewings(vacancyId) {
+  viewingsVacancy = vacancies.find((v) => v.id === vacancyId);
+  if (!viewingsVacancy) return;
+  $('viewings-title').textContent = `${viewingsVacancy.title}${viewingsVacancy.status === 'Open' ? '' : ' · applicants can only book while the listing is Open'}`;
+  $('slot-err').classList.add('hidden');
+  if (!$('slot-start').value) {
+    const d = new Date(Date.now() + 2 * 86400000); d.setHours(10, 0, 0, 0);
+    $('slot-start').value = toLocalInput(d.toISOString());
+  }
+  $('viewings-modal').classList.remove('hidden');
+  await loadViewings();
+}
+
+async function loadViewings() {
+  const list = $('viewings-list');
+  list.innerHTML = '<p class="text-gray-400">Loading…</p>';
+  const [slotsRes, bookRes] = await Promise.all([
+    supabaseClient.from('rental_viewing_slots').select('*').eq('vacancy_id', viewingsVacancy.id).order('starts_at', { ascending: false }),
+    supabaseClient.from('rental_viewing_bookings').select('id, reference, slot_id, full_name, email, phone, occupants, gross_monthly_income, move_in_date, employment_type, meets_income, status, created_at').eq('vacancy_id', viewingsVacancy.id).order('created_at'),
+  ]);
+  if (slotsRes.error || bookRes.error) { list.innerHTML = `<p class="text-red-600">${esc((slotsRes.error || bookRes.error).message)}. Has 027_tenancy_lifecycle.sql been run?</p>`; return; }
+  const slots = slotsRes.data || [];
+  const bookings = bookRes.data || [];
+  if (!slots.length) { list.innerHTML = '<p class="text-gray-400">No viewing times yet. Add one above; applicants then book on the listing page.</p>'; return; }
+  const now = Date.now();
+  list.innerHTML = slots.map((s) => {
+    const mine = bookings.filter((b) => b.slot_id === s.id);
+    const booked = mine.filter((b) => b.status !== 'Cancelled').length;
+    const past = new Date(s.starts_at).getTime() < now;
+    return `<div class="rounded-xl border border-gray-200 p-4 ${s.status === 'Cancelled' ? 'opacity-60' : ''}">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p class="font-semibold text-navy">${esc(dtt(s.starts_at))} <span class="font-normal text-gray-500">· ${s.duration_minutes} min · ${booked}/${s.capacity} booked${s.meeting_point ? ' · ' + esc(s.meeting_point) : ''}</span></p>
+        ${s.status === 'Cancelled' ? pill('Cancelled', 'bg-gray-100 text-gray-500') : past ? pill('Past', 'bg-gray-100 text-gray-600') : `<button class="text-xs text-gray-500 hover:text-red-700" data-cancel-slot="${s.id}">Cancel this viewing</button>`}
+      </div>
+      ${mine.length ? `<table class="w-full text-xs"><tbody>${mine.map((b) => `<tr class="border-t border-gray-100 align-top">
+        <td class="py-2 pr-2"><p class="font-semibold text-navy">${esc(b.full_name)}</p><p class="text-gray-500">${esc(b.email)} · ${esc(b.phone)}</p><p class="text-gray-400">${esc(b.reference)}</p></td>
+        <td class="py-2 pr-2 text-gray-600">${b.gross_monthly_income != null ? money(b.gross_monthly_income) + '/m' : '—'} ${b.meets_income === true ? pill('meets income', 'bg-green-100 text-green-700') : b.meets_income === false ? pill('below income', 'bg-amber-100 text-amber-800') : ''}
+          <p>${b.occupants ? esc(b.occupants) + ' occupant' + (b.occupants === 1 ? '' : 's') : ''}${b.employment_type ? ' · ' + esc(b.employment_type) : ''}${b.move_in_date ? ' · move in ' + esc(dt(b.move_in_date)) : ''}</p></td>
+        <td class="py-2 text-right whitespace-nowrap">${pill(b.status, BOOKING_STYLE[b.status])}
+          ${b.status === 'Booked' && past ? `<div class="mt-1 space-x-2"><button class="text-green-700 font-semibold hover:underline" data-booking="${b.id}:Attended">Attended</button><button class="text-red-700 font-semibold hover:underline" data-booking="${b.id}:No-show">No-show</button></div>` : ''}</td>
+      </tr>`).join('')}</tbody></table>` : '<p class="text-xs text-gray-400">No bookings yet.</p>'}
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-cancel-slot]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Cancel this viewing? Everyone booked on it is emailed that it is cancelled.')) return;
+    const { error } = await supabaseClient.from('rental_viewing_slots').update({ status: 'Cancelled' }).eq('id', b.dataset.cancelSlot);
+    if (error) return toast(error.message, true);
+    toast('Viewing cancelled. Booked applicants are being emailed.');
+    sendTenancyEmails(); loadViewings();
+  }));
+  list.querySelectorAll('[data-booking]').forEach((b) => b.addEventListener('click', async () => {
+    const [id, status] = b.dataset.booking.split(':');
+    const { error } = await supabaseClient.from('rental_viewing_bookings').update({ status }).eq('id', id);
+    if (error) return toast(error.message, true);
+    toast(status === 'Attended' ? 'Marked attended. They are being emailed the link to apply.' : 'Marked as no-show.');
+    if (status === 'Attended') sendTenancyEmails();
+    loadViewings();
+  }));
+}
+
+async function addViewingSlot(e) {
+  e.preventDefault();
+  const err = $('slot-err');
+  err.classList.add('hidden');
+  const start = new Date($('slot-start').value);
+  if (isNaN(start) || start.getTime() < Date.now()) { err.textContent = 'Choose a time in the future.'; err.classList.remove('hidden'); return; }
+  const { error } = await supabaseClient.from('rental_viewing_slots').insert([{
+    vacancy_id: viewingsVacancy.id, starts_at: start.toISOString(), duration_minutes: Number($('slot-duration').value) || 30,
+    capacity: Number($('slot-capacity').value) || 6, meeting_point: $('slot-meet').value.trim() || null, created_by: currentUser.id,
+  }]);
+  if (error) { err.textContent = error.message; err.classList.remove('hidden'); return; }
+  const next = new Date(start.getTime() + 7 * 86400000);
+  $('slot-start').value = toLocalInput(next.toISOString());
+  toast('Viewing time added. Applicants can book it on the listing page.');
+  loadViewings();
+}
+
+function sendTenancyEmails() {
+  supabaseClient.functions.invoke('tenancy-automation', { body: { action: 'send' } }).catch(() => {});
 }
 
 /* ================================================================

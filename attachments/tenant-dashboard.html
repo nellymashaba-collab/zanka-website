@@ -211,6 +211,11 @@
               <option>General Notice</option>
             </select>
           </div>
+          <div id="notice-vacate-wrap" class="hidden">
+            <label class="field-label" for="notice-move-out">Last day you will occupy the unit</label>
+            <input type="date" class="field" id="notice-move-out">
+            <p id="notice-earliest" class="text-xs text-gray-500 mt-1"></p>
+          </div>
           <div>
             <label class="field-label" for="notice-message">Message</label>
             <textarea class="field" id="notice-message" rows="3" required></textarea>
@@ -218,6 +223,8 @@
           <button type="submit" class="btn btn-primary w-full">Submit Notice</button>
           <p id="notice-note" class="hidden text-sm mt-1"></p>
         </form>
+        <h3 class="font-display font-semibold text-navy text-base mt-6 mb-2">Your Notices</h3>
+        <div id="notice-list" class="space-y-2 text-sm"><p class="text-gray-400">None yet.</p></div>
       </div>
 
       <div class="card p-6">

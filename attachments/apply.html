@@ -93,6 +93,19 @@
 <main id="main" class="bg-offwhite">
 
 <!-- ============ LIST VIEW ============ -->
+<section id="viewing-cancel-view" class="hidden py-14 md:py-20">
+  <div class="max-w-xl mx-auto px-5 sm:px-8">
+    <div class="rounded-2xl bg-white border border-gray-200 p-8 text-center">
+      <h1 class="font-display font-bold text-navy text-2xl mb-3">Cancel your viewing</h1>
+      <p id="vc-text" class="text-gray-600 mb-6">Do you want to cancel this viewing booking?</p>
+      <div id="vc-actions" class="flex flex-wrap justify-center gap-3">
+        <button id="vc-confirm" class="btn btn-primary">Yes, cancel it</button>
+        <a id="vc-keep" class="btn btn-outline-navy" href="apply.html">Keep my booking</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section id="list-view" class="hidden py-14 md:py-20">
   <div class="max-w-7xl mx-auto px-5 sm:px-8">
     <p class="eyebrow mb-2">To Let</p>
@@ -145,6 +158,28 @@
             </ul>
           </div>
           <p id="v-closes" class="text-xs text-gray-500 mt-4"></p>
+        </div>
+        <div id="viewing-card" class="hidden rounded-2xl bg-white border border-gray-200 p-6 mt-6 scroll-mt-24">
+          <h2 class="font-display font-semibold text-navy text-lg mb-1">Book a viewing</h2>
+          <p class="text-sm text-gray-500 mb-4">See the unit before you apply. Pick a time; we email you the meeting point.</p>
+          <div id="viewing-slots" class="space-y-2 mb-4" role="radiogroup" aria-label="Viewing times"></div>
+          <form id="viewing-form" class="hidden space-y-3 text-sm" novalidate>
+            <div><label class="field-label" for="vw-name">Full name *</label><input id="vw-name" class="field" required autocomplete="name"></div>
+            <div><label class="field-label" for="vw-email">Email *</label><input id="vw-email" type="email" class="field" required autocomplete="email"></div>
+            <div><label class="field-label" for="vw-phone">Mobile number *</label><input id="vw-phone" type="tel" class="field" required autocomplete="tel"></div>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="field-label" for="vw-occupants">People moving in</label><input id="vw-occupants" type="number" min="1" max="20" class="field"></div>
+              <div><label class="field-label" for="vw-move">Move-in date</label><input id="vw-move" type="date" class="field"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div><label class="field-label" for="vw-income">Gross household income (R/month)</label><input id="vw-income" type="number" min="0" step="1" class="field"></div>
+              <div><label class="field-label" for="vw-employment">Employment</label><select id="vw-employment" class="field"><option value="">Select</option><option>Permanent</option><option>Contract</option><option>Self-employed</option><option>Other</option></select></div>
+            </div>
+            <p class="text-xs text-gray-500">We use these details only to arrange the viewing and to tell you whether you are likely to qualify.</p>
+            <p id="vw-err" class="hidden text-red-600"></p>
+            <button class="btn btn-primary w-full">Book this viewing</button>
+          </form>
+          <div id="viewing-done" class="hidden text-sm"></div>
         </div>
       </aside>
 
