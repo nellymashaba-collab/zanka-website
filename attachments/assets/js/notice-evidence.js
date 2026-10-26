@@ -83,6 +83,7 @@ async function showRegister() {
   $('ev-status').className = 'mb-6 rounded-xl px-4 py-3 text-sm ' + (check.error ? 'bg-red-50 text-red-700' : check.data.length ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800');
   $('ev-status').textContent = check.error ? `Could not verify the trail: ${check.error.message}`
     : check.data.length ? `Integrity check FAILED for ${check.data.length} record(s): ${check.data.map((p) => `#${p.evidence_id} ${p.problem}`).join('; ')}`
+    : !rows.length ? 'The evidence trail is set up and empty. Records appear here as formal notices are sent.'
     : `Integrity check passed: all ${rows.length} record${rows.length === 1 ? '' : 's'} match their fingerprints and the chain is unbroken (${sast(new Date())}).`;
   $('ev-register').classList.remove('hidden');
   $('ev-register').innerHTML = rows.length ? `<div class="panel overflow-x-auto"><table class="w-full text-sm min-w-[640px]">
