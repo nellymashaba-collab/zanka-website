@@ -176,7 +176,16 @@ async function sendEmails(emailsToSend) {
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM_ADDRESS, to: emailPayload.to, subject: emailPayload.subject, html: emailPayload.html }),
+      // Admin is cc'd on every email EXCEPT those carrying a signing code:
+      // a code seen by anyone but the signer weakens the e-signature evidence.
+      body: JSON.stringify({
+        from: FROM_ADDRESS,
+        to: emailPayload.to,
+        cc: !emailPayload.containsCode && String(emailPayload.to).toLowerCase() !== ADMIN_EMAIL.toLowerCase() ? ADMIN_EMAIL : undefined,
+        reply_to: ADMIN_EMAIL,
+        subject: emailPayload.subject,
+        html: emailPayload.html,
+      }),
     });
     if (!resendResponse.ok) {
       const errText = await resendResponse.text();
@@ -543,6 +552,7 @@ async function handleLeaseEvent(eventType, leaseId, payload, caller) {
       emailsToSend.push({
         to: party.email,
         subject: 'Your lease is ready to sign',
+        containsCode: role !== 'owner', // owners sign without a code
         html: `
           <p>Hi ${esc(party.full_name || 'there')},</p>
           <p>Your lease for ${esc(lease.properties?.address || 'the property')} is ready for your ${esc(roleLabel)}.</p>
@@ -749,6 +759,7 @@ async function handleInspectionEvent(eventType, inspectionId, payload, caller) {
     emailsToSend.push({
       to: party.email,
       subject: 'Inspection report ready for your signature',
+      containsCode: true,
       html: `
         <p>Hi ${esc(party.full_name || 'there')},</p>
         <p>An inspection report for ${esc(inspection.properties?.address || 'your property')} is ready for your review and signature.</p>
