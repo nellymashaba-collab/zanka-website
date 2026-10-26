@@ -646,20 +646,82 @@ function wireMaintenanceForm(tenantId) {
   });
 }
 
+function noticeEsc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function noticeDate(d) { return d ? new Date(d + 'T12:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : ''; }
+
+// Earliest end date the law requires for a notice to vacate: one calendar
+// month on a month-to-month tenancy, otherwise 20 business days (CPA s14).
+// The database recalculates this on insert; this is only a guide.
+async function earliestVacateDate(tenantId) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Johannesburg' });
+  const { data: lease } = await supabaseClient.from('leases').select('status')
+    .eq('tenant_id', tenantId).in('status', ['Active', 'Active_Month_to_Month'])
+    .order('start_date', { ascending: false }).limit(1).maybeSingle();
+  if (lease?.status === 'Active_Month_to_Month') {
+    const d = new Date(today + 'T12:00:00'); d.setMonth(d.getMonth() + 1);
+    return { date: d.toLocaleDateString('en-CA'), rule: 'one calendar month (month-to-month lease)' };
+  }
+  const { data } = await supabaseClient.rpc('za_add_business_days', { p_from: today, p_days: 20 });
+  return { date: data || null, rule: '20 business days' };
+}
+
+async function loadNotices(tenantId) {
+  const list = document.getElementById('notice-list');
+  if (!list) return;
+  const { data } = await supabaseClient.from('notices').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(10);
+  if (!data || !data.length) { list.innerHTML = '<p class="text-gray-400">None yet.</p>'; return; }
+  list.innerHTML = data.map((n) => {
+    const st = n.status || 'New';
+    const label = st === 'New' ? 'Received' : st;
+    const end = n.confirmed_end_date ? `Confirmed last day: <strong>${noticeEsc(noticeDate(n.confirmed_end_date))}</strong>` : n.move_out_date ? `Requested last day: ${noticeEsc(noticeDate(n.move_out_date))}` : '';
+    return `<div class="rounded-lg border border-gray-200 p-3"><div class="flex justify-between gap-2"><span class="font-semibold text-navy">${noticeEsc(n.type || 'Notice')}</span><span class="text-xs text-gray-500">${noticeEsc(label)}</span></div>
+      <p class="text-xs text-gray-500">${n.created_at ? noticeEsc(new Date(n.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })) : ''}</p>${end ? `<p class="text-xs mt-1">${end}</p>` : ''}</div>`;
+  }).join('');
+}
+
 function wireNoticeForm(tenantId) {
   const form = document.getElementById('notice-form');
   if (!form) return;
+  const typeSel = document.getElementById('notice-type');
+  const wrap = document.getElementById('notice-vacate-wrap');
+  const moveOut = document.getElementById('notice-move-out');
+  let earliest = null;
+  const sync = async () => {
+    const vacate = typeSel.value === 'Notice to Vacate';
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !vacate);
+    moveOut.required = vacate;
+    if (vacate && !earliest) {
+      earliest = await earliestVacateDate(tenantId);
+      if (earliest.date) {
+        moveOut.min = earliest.date;
+        if (!moveOut.value) moveOut.value = earliest.date;
+        document.getElementById('notice-earliest').textContent = `The earliest you can leave is ${noticeDate(earliest.date)} (${earliest.rule} notice). An earlier date needs our agreement.`;
+      }
+    }
+  };
+  typeSel.addEventListener('change', sync);
+  sync();
+  loadNotices(tenantId);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const type = document.getElementById('notice-type').value;
+    const type = typeSel.value;
     const message = document.getElementById('notice-message').value.trim();
-    const { error } = await supabaseClient.from('notices').insert([{ tenant_id: tenantId, type, message }]);
+    const row = { tenant_id: tenantId, type, message };
+    if (type === 'Notice to Vacate' && moveOut && moveOut.value) row.move_out_date = moveOut.value;
+    const { error } = await supabaseClient.from('notices').insert([row]);
     const note = document.getElementById('notice-note');
     if (!error) {
-      note.textContent = 'Notice submitted.';
+      note.textContent = type === 'Notice to Vacate'
+        ? 'Notice submitted. We have emailed you a copy and will confirm your end date and move-out inspection.'
+        : 'Notice submitted. We have emailed you a copy.';
       note.classList.remove('hidden', 'text-red-600');
       note.classList.add('text-green-700');
       form.reset();
+      earliest = null; sync();
+      loadNotices(tenantId);
+      // Send the confirmation email now rather than waiting for the daily run.
+      supabaseClient.functions.invoke('tenancy-automation', { body: { action: 'send' } }).catch(() => {});
     } else {
       note.textContent = error.message;
       note.classList.remove('hidden');

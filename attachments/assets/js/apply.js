@@ -36,6 +36,8 @@ const money = (n) => 'R' + Number(n || 0).toLocaleString('en-ZA', { maximumFract
 const fmtDate = (d) => (d ? new Date(d + (d.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('cancel_viewing')) { showCancelViewing(qs.get('cancel_viewing'), qs.get('t'), qs.get('vacancy')); return; }
   const { data, error } = await supabaseClient.rpc('list_open_rental_vacancies');
   if (error) {
     $('vacancy-list').innerHTML = `<p class="text-red-600">We couldn't load available units right now. Please try again later, or contact us on <a class="underline" href="mailto:info@zankagroup.co.za">info@zankagroup.co.za</a>.</p>`;
@@ -111,6 +113,7 @@ function showApplyView() {
   }
 
   renderGallery(vacancy);
+  loadViewingSlots();
   addOccupantRow('', '');
   wireForm();
   showStep(1, { initial: true });
@@ -503,4 +506,88 @@ function renderGallery(v) {
   track.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(update, 60); }, { passive: true });
   window.addEventListener('resize', () => goTo(current()));
   update();
+}
+
+/* ---------------- Viewings (027_tenancy_lifecycle.sql) ---------------- */
+let chosenSlot = null;
+
+function sendTenancyEmails() {
+  // Sends the confirmation now instead of waiting for the daily run.
+  supabaseClient.functions.invoke('tenancy-automation', { body: { action: 'send' } }).catch(() => {});
+}
+
+function slotLabel(s) {
+  const d = new Date(s.starts_at);
+  return `${d.toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long' })}, ${d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+async function loadViewingSlots() {
+  const { data, error } = await supabaseClient.rpc('list_viewing_slots', { p_vacancy_id: vacancy.id });
+  if (error || !data || !data.length) return; // no viewings offered: keep the card hidden
+  $('viewing-card').classList.remove('hidden');
+  // Two cards in the sidebar: the sticky summary would slide over the booking card.
+  document.querySelector('#vacancy-summary > div').classList.remove('lg:sticky', 'lg:top-24');
+  $('viewing-slots').innerHTML = data.map((s) => `
+    <label class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3 cursor-pointer hover:border-gold ${s.spaces_left <= 0 ? 'opacity-50 pointer-events-none' : ''}">
+      <span class="flex items-center gap-3"><input type="radio" name="vw-slot" value="${esc(s.id)}" ${s.spaces_left <= 0 ? 'disabled' : ''}>
+        <span class="text-sm text-navy font-semibold">${esc(slotLabel(s))}</span></span>
+      <span class="text-xs text-gray-500">${s.spaces_left <= 0 ? 'Full' : `${s.spaces_left} space${s.spaces_left === 1 ? '' : 's'}`}</span>
+    </label>`).join('');
+  document.querySelectorAll('input[name="vw-slot"]').forEach((r) => r.addEventListener('change', () => {
+    chosenSlot = data.find((s) => s.id === r.value);
+    $('viewing-form').classList.remove('hidden');
+  }));
+  if (!$('viewing-form').dataset.wired) {
+    $('viewing-form').dataset.wired = '1';
+    $('viewing-form').addEventListener('submit', bookViewing);
+  }
+}
+
+async function bookViewing(e) {
+  e.preventDefault();
+  const err = $('vw-err');
+  err.classList.add('hidden');
+  const name = $('vw-name').value.trim(), email = $('vw-email').value.trim(), phone = $('vw-phone').value.trim();
+  if (!chosenSlot) { err.textContent = 'Choose a viewing time.'; err.classList.remove('hidden'); return; }
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || phone.replace(/\D/g, '').length < 9) {
+    err.textContent = 'Please give your name, a valid email address and a phone number.'; err.classList.remove('hidden'); return;
+  }
+  const btn = e.submitter || $('viewing-form').querySelector('button');
+  btn.disabled = true; btn.textContent = 'Booking…';
+  const { data, error } = await supabaseClient.rpc('book_viewing', { p_slot_id: chosenSlot.id, p_details: {
+    full_name: name, email, phone, occupants: $('vw-occupants').value, move_in_date: $('vw-move').value,
+    gross_monthly_income: $('vw-income').value, employment_type: $('vw-employment').value,
+  } });
+  btn.disabled = false; btn.textContent = 'Book this viewing';
+  if (error) { err.textContent = error.message || 'Something went wrong. Please try again.'; err.classList.remove('hidden'); loadViewingSlots(); return; }
+  sendTenancyEmails();
+  $('viewing-slots').classList.add('hidden');
+  $('viewing-form').classList.add('hidden');
+  const income = data.meets_income === false
+    ? `<p class="mt-3 rounded-lg bg-amber-50 text-amber-800 p-3">Heads up: for this unit we look for a gross household income of at least ${esc(money(data.min_gross_income))} a month. You are welcome to view it; a surety or a co-applicant may help.</p>` : '';
+  $('viewing-done').innerHTML = `<p class="rounded-lg bg-green-50 text-green-800 p-3"><strong>You're booked for ${esc(slotLabel(chosenSlot))}.</strong><br>Reference ${esc(data.reference)}. We've emailed the details and the meeting point to ${esc(email)}.</p>${income}`;
+  $('viewing-done').classList.remove('hidden');
+  // Save them retyping on the application form.
+  if ($('f-full_name') && !$('f-full_name').value) $('f-full_name').value = name;
+  if ($('f-email') && !$('f-email').value) $('f-email').value = email;
+  if ($('f-phone') && !$('f-phone').value) $('f-phone').value = phone;
+}
+
+function showCancelViewing(bookingId, token, vacancyId) {
+  $('viewing-cancel-view').classList.remove('hidden');
+  if (vacancyId) $('vc-keep').href = `apply.html?vacancy=${encodeURIComponent(vacancyId)}`;
+  $('vc-confirm').addEventListener('click', async () => {
+    $('vc-confirm').disabled = true;
+    const { data, error } = await supabaseClient.rpc('cancel_viewing_booking', { p_booking_id: bookingId, p_token: token });
+    if (error) {
+      $('vc-text').textContent = error.message || 'We could not cancel that booking.';
+      $('vc-confirm').classList.add('hidden');
+      $('vc-keep').textContent = 'See the unit';
+      return;
+    }
+    sendTenancyEmails();
+    $('vc-text').textContent = `Booking ${data.reference} is cancelled. You can book another time on the listing page.`;
+    $('vc-confirm').classList.add('hidden');
+    $('vc-keep').textContent = 'See other viewing times';
+  });
 }
