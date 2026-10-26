@@ -43,6 +43,37 @@ Adds everything that happens **before** a Draft lease exists: vacancy → public
 - Photos added and then abandoned (form closed without saving) are deleted. Photos removed from a listing are deleted when the listing is saved.
 - Public page: the cover photo on each card, a swipeable gallery with arrows, thumbnails and keyboard support on the unit page.
 
+## Automatic emails (026 + rental-notifications)
+
+Every listing and application change that someone should hear about is emailed automatically, with the admin address cc'd on every email.
+
+| What happened | Who is emailed |
+|---|---|
+| Listing created; goes live, closed, let or unpublished | Owner |
+| Listing title, rent, deposit, available date or closing date changed | Owner (quick successive edits become one email) |
+| Application submitted | Applicant (confirmation + reference) and owner |
+| Offer made | Applicant (offer letter with 48-hour deadline) and owner |
+| Offer accepted | Owner |
+| Application declined | Applicant |
+| "Email account invitation" clicked | Applicant |
+
+Owners never receive applicants' names, contact details, ID numbers or references: the POPIA consent applicants sign covers Zanka Group and its agents, not owners. The internal decline reason is never sent to the applicant. Replies go to the admin address.
+
+If a property has no owner on file, the owner email goes to the admin address with a note.
+
+### Setup
+
+1. Run `026_rental_notifications.sql` in the SQL editor (after 024 and 025). Safe to re-run.
+2. Deploy the function: Supabase dashboard → **Edge Functions** → **Deploy a new function** → **Via editor**. Name it exactly `rental-notifications`, paste in `supabase/functions/rental-notifications/index.ts`, and deploy. (CLI: `supabase functions deploy rental-notifications`.)
+3. Nothing else: it uses the same `RESEND_API_KEY` secret and verified sender (`notifications@zankagroup.co.za`) as `dms-notifications`.
+4. In Tenant Recruitment → **Screening settings → Automatic emails**, check the admin address.
+
+### How delivery is guaranteed
+
+Changes are written to a queue table (`rental_notifications`) by database triggers, in the same transaction as the change, so no event can be lost whichever page made it. The website then calls the function to send whatever is waiting. If that call fails or the browser closes, the email waits and goes out the next time anything calls the function (every admin page load does). Failed sends are retried automatically up to 3 times; the **Emails** panel shows every email, who it went to, and any error, with a **Retry** button.
+
+Optional backup: to send waiting emails even when nobody opens the admin page, schedule the function every 5 minutes (Supabase dashboard → Integrations → Cron → new job → "Supabase Edge Function" → `rental-notifications`, POST, empty body).
+
 ## Design decisions worth knowing
 
 - **Separate `rental_*` tables.** The existing `applications`, `listings` and `viewings` tables belong to the estate-agent partner workspace; they were left alone.

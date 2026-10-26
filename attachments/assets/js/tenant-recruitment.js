@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!currentUser) return;
   wireStatic();
   await loadAll();
+  sendQueuedEmails({ quiet: true }); // anything left waiting (e.g. a browser closed mid-send)
   const deepLink = new URLSearchParams(location.search).get('application');
   if (deepLink) openApplication(deepLink);
 });
@@ -67,6 +68,7 @@ function wireStatic() {
   $('settings-banner-open').addEventListener('click', openSettings);
   $('settings-form').addEventListener('submit', saveSettings);
   $('btn-purge').addEventListener('click', purgeExpiredDocuments);
+  $('btn-send-emails').addEventListener('click', () => sendQueuedEmails({ announce: true }));
   $('filter-vacancy').addEventListener('change', renderApplications);
   $('filter-status').addEventListener('change', renderApplications);
   document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
@@ -93,6 +95,7 @@ async function loadAll() {
     return;
   }
   settings = s.data;
+  $('emails-off-banner').classList.toggle('hidden', !(settings && settings.notifications_enabled === false));
   properties = p.data || [];
   vacancies = v.data || [];
   const consented = new Set((c.data || []).map((r) => r.application_id));
@@ -103,6 +106,7 @@ async function loadAll() {
   renderVacancies();
   renderVacancyFilter();
   renderApplications();
+  loadEmailLog();
 }
 
 function vacancyOf(app) { return vacancies.find((v) => v.id === app.vacancy_id) || null; }
@@ -153,6 +157,7 @@ function renderVacancies() {
     const { error } = await supabaseClient.from('rental_vacancies').update({ status }).eq('id', id);
     if (error) return alert('Could not update vacancy: ' + error.message);
     await loadAll();
+    sendQueuedEmails();
   }));
 }
 
@@ -247,6 +252,7 @@ async function saveVacancy(e) {
   photoState.saved = true;
   $('vacancy-modal').classList.add('hidden');
   await loadAll();
+  sendQueuedEmails();
 }
 
 /* ================================================================
@@ -369,8 +375,10 @@ async function renderDocuments(a) {
 async function renderHistory(a) {
   const el = $('am-history');
   el.innerHTML = '<p class="text-sm text-gray-400">Loading…</p>';
-  const { data: events, error } = await supabaseClient.from('rental_application_events')
-    .select('*, actor:actor_id ( full_name )').eq('application_id', a.id).order('created_at', { ascending: true });
+  const [{ data: events, error }, { data: mails }] = await Promise.all([
+    supabaseClient.from('rental_application_events').select('*, actor:actor_id ( full_name )').eq('application_id', a.id).order('created_at', { ascending: true }),
+    supabaseClient.from('rental_notifications').select('*').eq('application_id', a.id).order('id', { ascending: true }),
+  ]);
   if (openApp?.id !== a.id) return;
   if (error) { el.innerHTML = `<p class="text-sm text-red-600">${esc(error.message)}</p>`; return; }
   el.innerHTML = `<ol class="space-y-3 text-sm">${(events || []).map((e) => `
@@ -379,7 +387,12 @@ async function renderHistory(a) {
         : e.event_type === 'created' ? 'Application started' : esc(e.event_type.replace(/_/g, ' '))}
         ${e.detail?.reason ? `<span class="block text-xs text-gray-500">Reason: ${esc(e.detail.reason)}</span>` : ''}
         ${e.detail?.note ? `<span class="block text-xs text-gray-500">${esc(e.detail.note)}</span>` : ''}
-        <span class="block text-xs text-gray-400">${e.actor?.full_name ? esc(e.actor.full_name) : 'Applicant / system'}</span></span></li>`).join('')}</ol>`;
+        <span class="block text-xs text-gray-400">${e.actor?.full_name ? esc(e.actor.full_name) : 'Applicant / system'}</span></span></li>`).join('')}</ol>
+    <h4 class="text-xs uppercase tracking-wide text-gray-400 font-semibold mt-6 mb-2">Emails about this application</h4>
+    ${(mails || []).length ? `<ul class="space-y-2 text-sm">${mails.map((m) => `<li class="flex items-start justify-between gap-3">
+      <span><span class="text-gray-700">${esc(EMAIL_LABELS[m.event_type] || m.event_type)}</span>
+        <span class="block text-xs text-gray-400">${esc(recipientSummary(m))} · ${dtt(m.processed_at || m.created_at)}</span></span>
+      ${emailStatusPill(m)}</li>`).join('')}</ul>` : '<p class="text-sm text-gray-400">None yet.</p>'}`;
 }
 
 /* ---------------- Screening ---------------- */
@@ -500,13 +513,13 @@ function renderActions(a) {
   if (a.status === 'Offered') {
     const expired = a.offer_expires_at && new Date(a.offer_expires_at) < new Date();
     parts.push(`<p class="text-sm ${expired ? 'text-red-700 font-semibold' : 'text-gray-600'}">Offer ${expired ? 'expired' : 'expires'} ${dtt(a.offer_expires_at)}.</p>`);
-    parts.push(btn('email-offer', 'Re-open offer email', 'btn-outline-navy'));
+    parts.push(btn('email-offer', 'Resend offer email', 'btn-outline-navy'));
     parts.push(btn('Accepted', 'Applicant accepted in writing', 'btn-primary'));
     parts.push(btn('decline', expired ? 'Offer lapsed: decline' : 'Decline', 'btn-outline-navy !text-red-700 !border-red-200'));
   }
   if (a.status === 'Accepted') parts.push('<div id="handover-box" class="text-sm text-gray-500">Checking for a tenant account…</div>');
   if (a.status === 'Lease created') parts.push(`<p class="text-sm text-green-700 font-semibold">Draft lease created. Continue in <a class="underline" href="lease-dashboard.html">Leases</a>, where KYC and signature run as usual.</p>`);
-  if (a.status === 'Declined') parts.push(btn('email-decline', 'Re-open decline email', 'btn-outline-navy'));
+  if (a.status === 'Declined') parts.push(btn('email-decline', 'Resend decline email', 'btn-outline-navy'));
   if (!CLOSED.includes(a.status)) parts.push(btn('Withdrawn', 'Applicant withdrew', 'btn-outline-navy !text-gray-500'));
 
   el.innerHTML = `<h4 class="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-3">Decision</h4><div class="space-y-2.5">${parts.join('')}</div>`;
@@ -518,6 +531,7 @@ async function setStatus(status, extra = {}) {
   const { data, error } = await supabaseClient.from('rental_applications').update({ status, ...extra }).eq('id', openApp.id).select().single();
   if (error) { alert('Could not update application: ' + error.message); return null; }
   await refreshOpenApp(data);
+  sendQueuedEmails();
   return data;
 }
 
@@ -539,16 +553,16 @@ async function runAction(action) {
     const conditional = r.recommendation === 'Conditional';
     const others = applications.filter((x) => x.vacancy_id === a.vacancy_id && x.id !== a.id && x.status === 'Offered');
     if (others.length && !confirm(`${others.map((o) => o.full_name).join(', ')} already holds an offer on this unit. Make a second offer anyway?`)) return;
-    if (!confirm(`Offer ${v?.title || 'this unit'} to ${a.full_name}?${conditional ? '\n\nThis applicant scored in the conditional band: the offer email will ask for a surety or a larger deposit.' : ''}`)) return;
+    if (!confirm(`Offer ${v?.title || 'this unit'} to ${a.full_name}?\n\nThe offer is emailed to ${a.email} straight away (admin cc'd), and the owner is told an offer was made.${conditional ? '\n\nThis applicant scored in the conditional band: the offer email asks for a surety or a larger deposit.' : ''}`)) return;
     const hours = Number(settings?.offer_valid_hours || 48);
     const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
     const row = await setStatus('Offered', { offer_sent_at: now, offer_expires_at: expires, decided_by: currentUser.id, decided_at: now, decision_reason: conditional ? 'Conditional approval: surety or larger deposit required' : 'Approved' });
-    if (row) openMail(offerEmail(row, v, conditional));
+    if (row) toast(`Offer sent to ${row.email} (admin cc'd). The owner has been told.`);
     return;
   }
 
-  if (action === 'email-offer') return openMail(offerEmail(a, v, evaluate(a).recommendation === 'Conditional'));
-  if (action === 'email-decline') return openMail(declineEmail(a, v));
+  if (action === 'email-offer') return queueEmail('application_offered', a, `Offer email sent again to ${a.email}. The owner is also re-notified.`);
+  if (action === 'email-decline') return queueEmail('application_declined', a, `Decline email sent again to ${a.email}.`);
 
   if (action === 'Accepted') {
     if (!confirm(`Confirm ${a.full_name} has accepted the offer in writing?`)) return;
@@ -558,55 +572,12 @@ async function runAction(action) {
   if (action === 'decline') {
     const r = evaluate(a);
     const suggested = r.knockoutFailed ? r.reasons.join('; ') : r.recommendation === 'Decline' ? r.reasons.join('; ') : '';
-    const reason = prompt('Reason for declining (internal record; not sent to the applicant):', suggested);
+    const reason = prompt(`Reason for declining (internal record; NOT sent to the applicant).\n\n${a.full_name} will be emailed a polite decline straight away (admin cc'd).`, suggested);
     if (reason === null) return;
     if (!reason.trim()) return alert('Please record a reason so the decision can be explained later.');
     const row = await setStatus('Declined', { decision_reason: reason.trim(), decided_by: currentUser.id, decided_at: now });
-    if (row) openMail(declineEmail(row, v));
+    if (row) toast(`Decline email sent to ${row.email} (admin cc'd).`);
   }
-}
-
-/* ---------------- Emails (opened in the admin's mail app) ---------------- */
-function firstName(name) { return String(name || '').trim().split(/\s+/)[0] || 'there'; }
-
-function offerEmail(a, v, conditional) {
-  const deadline = new Date(a.offer_expires_at).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short' });
-  const start = a.move_in_date || v?.available_from;
-  const body = `Hi ${firstName(a.full_name)},
-
-Good news: your application to rent ${v?.title || 'the unit'} (${v?.area || ''}) has been approved${conditional ? ', subject to the condition below' : ''}.
-
-Rent: ${money(v?.monthly_rent)} per month, due on the 1st
-Deposit: ${money(v?.deposit)}
-Lease start: ${start ? new Date(start + 'T00:00:00').toLocaleDateString('en-ZA', { dateStyle: 'long' }) : 'to be agreed'} | Term: ${a.lease_term_months || 12} months
-${conditional ? '\nCondition: we require either a surety who meets our screening requirements, or an additional deposit. Please reply to let us know which you prefer.\n' : ''}
-Please confirm by ${deadline} that you accept. Once you do, you'll receive the lease to sign through our platform, along with deposit payment details.
-
-The unit stays available to other applicants until we receive your confirmation.
-
-Kind regards,
-${currentUser.full_name || 'Zanka Group'}
-Zanka Group (Pty) Ltd`;
-  return { to: a.email, subject: `Your application for ${v?.title || 'the unit'} – approved (ref ${a.reference})`, body };
-}
-
-function declineEmail(a, v) {
-  const retention = settings?.declined_doc_retention_days || 90;
-  const usedCredit = a.credit_score !== null && a.credit_score !== undefined;
-  const body = `Hi ${firstName(a.full_name)},
-
-Thank you for applying for ${v?.title || 'the unit'} (${v?.area || ''}). After assessing all applications against our standard criteria, we are unable to offer you this unit.
-${usedCredit ? `\nIf our decision was influenced by your credit report, you are entitled to a free copy of it from ${a.credit_bureau || 'the credit bureau'}, and may dispute anything inaccurate.\n` : ''}
-Your documents will be destroyed within ${retention} days, as set out in the consent you signed.
-
-Kind regards,
-${currentUser.full_name || 'Zanka Group'}
-Zanka Group (Pty) Ltd`;
-  return { to: a.email, subject: `Your application for ${v?.title || 'the unit'} (ref ${a.reference})`, body };
-}
-
-function openMail({ to, subject, body }) {
-  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 /* ---------------- Hand-over to the Lease Wizard ---------------- */
@@ -617,7 +588,6 @@ async function renderHandover(a) {
   if (openApp?.id !== a.id || !$('handover-box')) return;
   if (error) { box.innerHTML = `<p class="text-red-600">${esc(error.message)}</p>`; return; }
 
-  const signupUrl = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}tenant-signup.html`;
   if (!tenant) {
     box.innerHTML = `
       <p class="text-gray-700 mb-3">The Lease Wizard needs a tenant account. No account exists for <span class="font-semibold">${esc(a.email)}</span> yet.</p>
@@ -625,11 +595,7 @@ async function renderHandover(a) {
         <button id="btn-invite" class="btn btn-primary !py-2 !px-4 text-sm w-full">Email account invitation</button>
         <button id="btn-recheck" class="btn btn-outline-navy !py-2 !px-4 text-sm w-full">They've signed up: check again</button>
       </div>`;
-    $('btn-invite').addEventListener('click', () => openMail({
-      to: a.email,
-      subject: `Next step for your lease at ${vacancyOf(a)?.title || 'Zanka Group'}`,
-      body: `Hi ${firstName(a.full_name)},\n\nThank you for accepting our offer. To receive and sign your lease online, please create your tenant account here, using this email address (${a.email}):\n\n${signupUrl}\n\nLet us know once you've signed up and we'll send the lease.\n\nKind regards,\n${currentUser.full_name || 'Zanka Group'}\nZanka Group (Pty) Ltd`,
-    }));
+    $('btn-invite').addEventListener('click', () => queueEmail('tenant_account_invite', a, `Account invitation emailed to ${a.email} (admin cc'd).`));
     $('btn-recheck').addEventListener('click', () => renderHandover(a));
     return;
   }
@@ -661,6 +627,8 @@ function openSettings() {
   $('st-retention').value = settings?.declined_doc_retention_days ?? 90;
   $('st-confirmed').checked = !!settings?.settings_confirmed;
   $('st-confirmed-note').value = settings?.confirmed_by_note || '';
+  $('st-notify').checked = settings?.notifications_enabled !== false;
+  $('st-admin-email').value = settings?.notification_admin_email || 'admin@zankagroup.co.za';
   $('settings-msg').classList.add('hidden');
   $('settings-modal').classList.remove('hidden');
 }
@@ -676,12 +644,16 @@ async function saveSettings(e) {
     approve_min_score: i('st-approve'), conditional_min_score: i('st-conditional'),
     offer_valid_hours: i('st-offer-hours'), declined_doc_retention_days: i('st-retention'),
     settings_confirmed: $('st-confirmed').checked, confirmed_by_note: $('st-confirmed-note').value.trim() || null,
+    notifications_enabled: $('st-notify').checked, notification_admin_email: $('st-admin-email').value.trim(),
     updated_by: currentUser.id,
   };
   const msg = $('settings-msg');
   msg.classList.remove('hidden', 'text-red-600', 'text-green-700');
   if (!(row.affordability_full_max <= row.affordability_half_max && row.affordability_half_max <= row.affordability_knockout_max)) {
     msg.textContent = 'Affordability bands must increase: full ≤ half ≤ knockout.'; msg.classList.add('text-red-600'); return;
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(row.notification_admin_email)) {
+    msg.textContent = 'Enter a valid admin email address for notifications.'; msg.classList.add('text-red-600'); return;
   }
   if (!(row.conditional_min_score <= row.approve_min_score)) {
     msg.textContent = 'The conditional score must be at or below the approve score.'; msg.classList.add('text-red-600'); return;
@@ -862,4 +834,111 @@ function renderPhotos() {
     tile.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
     tile.addEventListener('drop', (e) => { e.preventDefault(); if (dragFrom !== null) movePhoto(dragFrom, Number(tile.dataset.index)); dragFrom = null; });
   });
+}
+
+
+/* ================================================================
+   AUTOMATIC EMAILS
+   Changes are queued by the database (026_rental_notifications.sql);
+   the rental-notifications Edge Function sends whatever is waiting.
+   Nothing here decides who gets what — the database does.
+   ================================================================ */
+const EMAIL_LABELS = {
+  listing_created: 'Listing created → owner',
+  listing_status_changed: 'Listing status → owner',
+  listing_updated: 'Listing details changed → owner',
+  application_received: 'Application received → applicant + owner',
+  application_offered: 'Offer → applicant + owner',
+  application_accepted: 'Offer accepted → owner',
+  application_declined: 'Decline → applicant',
+  tenant_account_invite: 'Tenant account invitation → applicant',
+};
+const EMAIL_STATUS_STYLE = { pending: 'bg-blue-100 text-blue-700', sending: 'bg-blue-100 text-blue-700', sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', skipped: 'bg-gray-100 text-gray-500' };
+const EMAIL_STATUS_TEXT = { pending: 'Waiting', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Not sent' };
+
+function emailStatusPill(m) {
+  return pill(EMAIL_STATUS_TEXT[m.status] || m.status, EMAIL_STATUS_STYLE[m.status]);
+}
+
+function recipientSummary(m) {
+  if (!Array.isArray(m.recipients) || !m.recipients.length) return m.status === 'pending' || m.status === 'sending' ? 'Not sent yet' : (m.last_error || '—');
+  return m.recipients.map((r) => `${(r.to || []).join(', ')}${(r.cc || []).length ? ` (cc ${(r.cc || []).join(', ')})` : ''}`).join('; ');
+}
+
+// One line per email: "to" in normal text, cc'd addresses quieter underneath.
+function recipientLines(m) {
+  if (!Array.isArray(m.recipients) || !m.recipients.length) return `<span class="text-gray-400">${esc(recipientSummary(m))}</span>`;
+  return m.recipients.map((r) => `<span class="block mb-1 last:mb-0"><span class="text-navy">${esc((r.to || []).join(', '))}</span>${(r.cc || []).length ? `<span class="block text-xs text-gray-400">cc ${esc(r.cc.join(', '))}</span>` : ''}</span>`).join('');
+}
+
+let sendingEmails = null;
+async function sendQueuedEmails(opts = {}) {
+  if (sendingEmails) return sendingEmails; // one run at a time
+  sendingEmails = (async () => {
+    try {
+      const { data, error } = await supabaseClient.functions.invoke('rental-notifications', { body: {} });
+      if (error) throw error;
+      if (opts.announce) toast(data && data.processed ? `${data.sent} sent, ${data.failed} failed.` : 'No emails were waiting.');
+      else if (!opts.quiet && data && data.failed) toast(`${data.failed} email${data.failed === 1 ? '' : 's'} could not be sent. See the email log below.`, true);
+      return data;
+    } catch (err) {
+      if (!opts.quiet) toast(`Emails could not be sent right now (${err.message || 'connection problem'}). They stay queued and will go out next time.`, true);
+      return null;
+    } finally {
+      sendingEmails = null;
+      loadEmailLog();
+      if (openApp) renderHistory(openApp);
+    }
+  })();
+  return sendingEmails;
+}
+
+async function queueEmail(eventType, app, doneMessage) {
+  const { error } = await supabaseClient.from('rental_notifications').insert([{
+    event_type: eventType, application_id: app.id, vacancy_id: app.vacancy_id, requested_by: currentUser.id,
+  }]);
+  if (error) return toast('Could not queue the email: ' + error.message, true);
+  const result = await sendQueuedEmails({ quiet: true });
+  toast(result && !result.failed ? doneMessage : 'The email is queued, but sending failed. See the email log.', !(result && !result.failed));
+}
+
+async function loadEmailLog() {
+  const body = $('email-log-tbody');
+  if (!body) return;
+  const { data: rows, error } = await supabaseClient.from('rental_notifications')
+    .select('*, rental_vacancies ( title )').order('id', { ascending: false }).limit(40);
+  if (error) { body.innerHTML = `<tr><td colspan="5" class="py-6 px-3 text-red-600">Could not load the email log: ${esc(error.message)}. Has 026_rental_notifications.sql been run?</td></tr>`; return; }
+  const waiting = (rows || []).filter((r) => r.status === 'pending' || r.status === 'failed').length;
+  $('email-log-waiting').textContent = waiting ? `${waiting} waiting or failed` : '';
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="py-6 px-3 text-gray-400">No emails yet. They appear here as listings and applications change.</td></tr>'; return; }
+  body.innerHTML = rows.map((m) => `
+    <tr class="border-b border-gray-100 last:border-0 align-top">
+      <td class="py-3 px-3 whitespace-nowrap text-gray-600">${dtt(m.processed_at || m.created_at)}</td>
+      <td class="py-3 px-3"><p class="text-navy">${esc(EMAIL_LABELS[m.event_type] || m.event_type)}</p><p class="text-xs text-gray-500">${esc(m.rental_vacancies?.title || '')}</p></td>
+      <td class="py-3 px-3 text-gray-600">${recipientLines(m)}${m.status === 'failed' && m.last_error ? `<p class="text-xs text-red-600 mt-1 break-words">${esc(m.last_error)}</p>` : ''}</td>
+      <td class="py-3 px-3">${emailStatusPill(m)}${m.attempts > 1 ? `<p class="text-xs text-gray-400 mt-1">${m.attempts} attempts</p>` : ''}</td>
+      <td class="py-3 px-3 text-right">${m.status === 'failed' || m.status === 'skipped' ? `<button class="text-gold font-semibold hover:underline" data-retry-email="${m.id}">Retry</button>` : ''}</td>
+    </tr>`).join('');
+  body.querySelectorAll('[data-retry-email]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error: e } = await supabaseClient.from('rental_notifications').update({ status: 'pending', attempts: 0, last_error: null }).eq('id', b.dataset.retryEmail);
+    if (e) { b.disabled = false; return toast('Could not retry: ' + e.message, true); }
+    sendQueuedEmails({ announce: true });
+  }));
+}
+
+function toast(message, isError) {
+  let el = $('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.setAttribute('role', 'status');
+    el.className = 'fixed bottom-5 right-5 left-5 sm:left-auto sm:max-w-md z-[60] rounded-xl px-4 py-3 text-sm shadow-lg transition-opacity';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.remove('opacity-0', 'bg-navy', 'text-white', 'bg-red-600');
+  el.classList.add(...(isError ? ['bg-red-600', 'text-white'] : ['bg-navy', 'text-white']));
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => el.classList.add('opacity-0'), isError ? 9000 : 5000);
 }
