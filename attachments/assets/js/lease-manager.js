@@ -50,6 +50,59 @@ async function initWizard() {
   wireWizardNav();
   wireDocumentInputs();
   wireEscalations();
+  await prefillFromRentalApplication();
+}
+
+// Hand-over from Tenant Recruitment (tenant-recruitment.html): when opened
+// as lease-wizard.html?application=<rental_applications.id>, pre-fill the
+// property, tenant, rent, deposit and dates from the accepted application.
+// Everything stays editable; the admin still steps through the wizard.
+async function prefillFromRentalApplication() {
+  const applicationId = new URLSearchParams(window.location.search).get('application');
+  if (!applicationId) return;
+
+  const { data: app, error } = await supabaseClient
+    .from('rental_applications')
+    .select('id, reference, status, full_name, email, move_in_date, lease_term_months, rental_vacancies ( property_id, monthly_rent, deposit, available_from )')
+    .eq('id', applicationId)
+    .single();
+  if (error || !app) { console.error('Could not load rental application for pre-fill:', error?.message); return; }
+  if (app.status !== 'Accepted') {
+    alert(`Application ${app.reference} is "${app.status}", not "Accepted", so the wizard was not pre-filled.`);
+    return;
+  }
+
+  wizardState.rentalApplicationId = app.id;
+  const v = app.rental_vacancies || {};
+  const setVal = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && value !== null && value !== undefined && value !== '') { el.value = value; el.dispatchEvent(new Event('change')); }
+  };
+
+  setVal('lw-property', v.property_id);
+
+  const { data: tenant } = await supabaseClient.from('profiles').select('id')
+    .eq('role', 'tenant').ilike('email', app.email.replace(/[\\%_]/g, '\\$&')).limit(1).maybeSingle();
+  if (tenant) setVal('lw-tenant', tenant.id);
+
+  setVal('lw-monthly-rent', v.monthly_rent);
+  setVal('lw-deposit-required', v.deposit);
+
+  const start = app.move_in_date || v.available_from;
+  if (start) {
+    setVal('lw-start-date', start);
+    const months = Number(app.lease_term_months) || 12;
+    const end = new Date(start + 'T00:00:00Z');
+    end.setUTCMonth(end.getUTCMonth() + months);
+    end.setUTCDate(end.getUTCDate() - 1); // e.g. 1 Dec 2026 + 12 months -> 30 Nov 2027
+    setVal('lw-end-date', end.toISOString().slice(0, 10));
+  }
+
+  const note = document.createElement('p');
+  note.className = 'mb-6 rounded-xl bg-green-50 text-green-800 px-4 py-3 text-sm';
+  note.textContent = `Pre-filled from application ${app.reference} (${app.full_name}).${tenant ? '' : ' No tenant account was found for ' + app.email + ' — select the tenant manually.'} Check every field before saving.`;
+  const form = document.getElementById('lease-wizard-form');
+  form.parentNode.insertBefore(note, form);
 }
 
 function wireEscalations() {
@@ -429,6 +482,15 @@ async function handleWizardSubmit(e) {
       previous_state: null,
       new_state: 'Draft',
     }]);
+
+    // 4. Close the loop with Tenant Recruitment, if this lease came from an
+    // accepted rental application (the DB trigger then marks the vacancy Let).
+    if (wizardState.rentalApplicationId) {
+      const { error: linkError } = await supabaseClient.from('rental_applications')
+        .update({ status: 'Lease created', lease_id: lease.id, tenant_profile_id: tenantId })
+        .eq('id', wizardState.rentalApplicationId);
+      if (linkError) console.error('Lease created, but the rental application could not be linked:', linkError.message);
+    }
 
     successEl.textContent = 'Lease saved as Draft. It now needs FICA approval before it can be sent for signature.';
     successEl.classList.remove('hidden');

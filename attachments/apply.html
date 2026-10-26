@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Available Rentals | Zanka Group</title>
+<meta name="description" content="Rental units to let from Zanka Group in Johannesburg. Apply online in about 15 minutes.">
+<link rel="canonical" href="https://zankagroup.co.za/apply.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Zanka Group">
+<meta property="og:title" content="Available Rentals | Zanka Group">
+<meta property="og:description" content="Rental units to let from Zanka Group in Johannesburg. Apply online in about 15 minutes.">
+<meta property="og:url" content="https://zankagroup.co.za/apply.html">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Available Rentals | Zanka Group">
+<meta name="twitter:description" content="Rental units to let from Zanka Group in Johannesburg. Apply online in about 15 minutes.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#1F2A44',
+            'navy-deep': '#141C30',
+            gold: '#C89B3C',
+            'gold-light': '#E4C77A',
+            offwhite: '#F4F4F4'
+          },
+          fontFamily: {
+            display: ['Playfair Display', 'Georgia', 'serif'],
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+
+</head>
+<body class="bg-offwhite antialiased">
+<a href="#main" class="skip-link">Skip to content</a>
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between">
+    <a href="index.html" class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+      <span class="leading-none">
+        <span class="block font-display font-bold text-navy text-lg tracking-tight">ZANKA</span>
+        <span class="block text-[10px] tracking-[0.25em] text-gray-500 font-semibold">GROUP</span>
+      </span>
+    </a>
+    <nav class="hidden lg:flex items-center gap-8">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        <a href="services.html" class="nav-link">Services</a>
+        <a href="pricing.html" class="nav-link">Pricing</a>
+        <a href="resources.html" class="nav-link">Resources</a>
+        <a href="contact.html" class="nav-link">Contact</a>
+    </nav>
+    <div class="hidden lg:flex items-center gap-3">
+      <a href="tenant-login.html" class="btn-outline-navy btn !py-2.5 !px-5 text-sm">Tenant Portal</a>
+      <a href="owner-login.html" class="btn-primary btn !py-2.5 !px-5 text-sm">Owner Portal</a>
+    </div>
+    <button id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" class="lg:hidden text-navy">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+  </div>
+  <div id="mobile-menu" class="hidden lg:hidden border-t border-gray-100 px-5 py-4 space-y-1">
+        <a href="index.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Home</a>
+        <a href="about.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">About</a>
+        <a href="services.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Services</a>
+        <a href="pricing.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Pricing</a>
+        <a href="resources.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Resources</a>
+        <a href="contact.html" class="block py-2.5 px-4 rounded-lg font-medium text-navy hover:bg-offwhite">Contact</a>
+    <div class="flex gap-3 pt-3">
+      <a href="tenant-login.html" class="btn-outline-navy btn flex-1 text-sm">Tenant Portal</a>
+      <a href="owner-login.html" class="btn-primary btn flex-1 text-sm">Owner Portal</a>
+    </div>
+  </div>
+</header>
+<main id="main" class="bg-offwhite">
+
+<!-- ============ LIST VIEW ============ -->
+<section id="list-view" class="hidden py-14 md:py-20">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8">
+    <p class="eyebrow mb-2">To Let</p>
+    <h1 class="font-display font-bold text-navy text-4xl sm:text-5xl mb-3">Available Rentals</h1>
+    <p class="text-gray-500 max-w-2xl mb-8">Apply online in about 15 minutes. Have your ID, 3 recent payslips and 3 months' bank statements ready as PDFs or photos.</p>
+    <p id="list-notice" class="hidden mb-6 rounded-xl bg-amber-50 text-amber-800 px-4 py-3 text-sm"></p>
+    <div id="vacancy-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <p class="text-gray-400">Loading available units…</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ APPLY VIEW ============ -->
+<section id="apply-view" class="hidden py-10 md:py-14">
+  <div class="max-w-6xl mx-auto px-5 sm:px-8">
+    <a href="apply.html" class="text-sm text-gray-500 hover:text-gold">&larr; All available rentals</a>
+
+    <div class="grid lg:grid-cols-3 gap-8 mt-4">
+      <!-- Unit summary -->
+      <aside id="vacancy-summary" class="lg:col-span-1 lg:order-2">
+        <div class="rounded-2xl bg-white border border-gray-200 p-6 lg:sticky lg:top-24">
+          <p id="v-area" class="eyebrow mb-2"></p>
+          <h1 id="v-title" class="font-display font-bold text-navy text-2xl mb-4"></h1>
+          <dl class="grid grid-cols-2 gap-y-3 text-sm mb-5">
+            <dt class="text-gray-500">Rent</dt><dd id="v-rent" class="font-semibold text-navy text-right"></dd>
+            <dt class="text-gray-500">Deposit</dt><dd id="v-deposit" class="font-semibold text-navy text-right"></dd>
+            <dt class="text-gray-500">Available</dt><dd id="v-available" class="font-semibold text-navy text-right"></dd>
+          </dl>
+          <ul id="v-specs" class="text-sm text-gray-600 space-y-1 mb-4 list-disc pl-5"></ul>
+          <p id="v-description" class="text-sm text-gray-600 mb-4 whitespace-pre-line"></p>
+          <p class="text-sm text-gray-600"><span id="v-pets"></span></p>
+          <p id="v-occupants" class="text-sm text-gray-600 mb-4"></p>
+          <div class="rounded-xl bg-offwhite p-4 text-sm">
+            <p class="font-semibold text-navy mb-1">Requirements</p>
+            <ul class="text-gray-600 space-y-1 list-disc pl-5">
+              <li>Gross household income of at least <span id="v-min-income" class="font-semibold"></span> per month</li>
+              <li>Clear credit record and a positive rental reference</li>
+              <li>Valid ID, 3 months' payslips and 3 months' bank statements</li>
+            </ul>
+          </div>
+          <p id="v-closes" class="text-xs text-gray-500 mt-4"></p>
+        </div>
+      </aside>
+
+      <!-- Form -->
+      <div class="lg:col-span-2 lg:order-1">
+        <div id="apply-card" class="rounded-2xl bg-white border border-gray-200 p-6 sm:p-8 scroll-mt-24">
+          <div class="mb-6">
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span id="step-name" class="font-semibold text-navy"></span>
+              <span id="step-count" class="text-gray-500"></span>
+            </div>
+            <div class="h-1.5 rounded-full bg-gray-100"><div id="step-bar" class="h-1.5 rounded-full bg-gold transition-all" style="width:0"></div></div>
+          </div>
+
+          <form id="apply-form" novalidate>
+
+            <!-- Step 1 -->
+            <div data-step="1" data-title="About you" class="space-y-5">
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-full_name">Full name *</label><input id="f-full_name" class="field" required autocomplete="name"></div>
+                <div><label class="field-label" for="f-id_number">SA ID or passport number *</label><input id="f-id_number" class="field" required></div>
+                <div><label class="field-label" for="f-date_of_birth">Date of birth</label><input id="f-date_of_birth" type="date" class="field"></div>
+                <div><label class="field-label" for="f-marital_status">Marital status</label>
+                  <select id="f-marital_status" class="field"><option value="">Prefer not to say</option><option>Single</option><option>Married</option><option>Living together</option><option>Divorced</option><option>Widowed</option></select></div>
+                <div><label class="field-label" for="f-email">Email *</label><input id="f-email" type="email" class="field" required autocomplete="email"></div>
+                <div><label class="field-label" for="f-phone">Mobile number *</label><input id="f-phone" type="tel" class="field" required autocomplete="tel" pattern="[0-9 +()-]{9,20}"></div>
+              </div>
+              <div><label class="field-label" for="f-current_address">Current address *</label><input id="f-current_address" class="field" required autocomplete="street-address"></div>
+              <div class="grid sm:grid-cols-3 gap-5">
+                <div><label class="field-label" for="f-dependants">Number of dependants</label><input id="f-dependants" type="number" min="0" max="20" class="field"></div>
+                <div><label class="field-label" for="f-move_in_date">Preferred move-in date</label><input id="f-move_in_date" type="date" class="field"></div>
+                <div><label class="field-label" for="f-lease_term_months">Lease term</label>
+                  <select id="f-lease_term_months" class="field"><option value="12">12 months</option><option value="24">24 months</option><option value="6">6 months</option></select></div>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div data-step="2" data-title="Who will live in the unit" class="space-y-5 hidden">
+              <p class="text-sm text-gray-500">List everyone who will live in the unit, including yourself.</p>
+              <div id="occupants-list" class="space-y-3"></div>
+              <button type="button" id="add-occupant" class="text-sm font-semibold text-gold hover:underline">+ Add another person</button>
+              <div class="grid sm:grid-cols-2 gap-5 pt-2">
+                <div><label class="field-label" for="f-pets">Pets (type and number)</label><input id="f-pets" class="field" placeholder="None"></div>
+                <div><label class="field-label" for="f-vehicles">Number of vehicles</label><input id="f-vehicles" type="number" min="0" max="10" class="field"></div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div data-step="3" data-title="Work and income" class="space-y-5 hidden">
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-employment_type">Employment type *</label>
+                  <select id="f-employment_type" class="field" required><option value="">Select</option><option>Permanent</option><option>Contract</option><option>Self-employed</option><option>Other</option></select></div>
+                <div><label class="field-label" for="f-employment_start_date" id="start-label">Start date</label><input id="f-employment_start_date" type="date" class="field"></div>
+              </div>
+              <div id="contract-wrap" class="hidden"><label class="field-label" for="f-contract_end_date">Contract end date *</label><input id="f-contract_end_date" type="date" class="field"></div>
+              <div id="employed-wrap" class="space-y-5">
+                <div class="grid sm:grid-cols-2 gap-5">
+                  <div><label class="field-label" for="f-employer">Employer *</label><input id="f-employer" class="field" autocomplete="organization"></div>
+                  <div><label class="field-label" for="f-job_title">Job title</label><input id="f-job_title" class="field"></div>
+                </div>
+                <p class="text-sm font-semibold text-navy">HR or line manager we may contact</p>
+                <div class="grid sm:grid-cols-3 gap-5">
+                  <div><label class="field-label" for="f-hr_contact_name">Name</label><input id="f-hr_contact_name" class="field"></div>
+                  <div><label class="field-label" for="f-hr_contact_phone">Phone *</label><input id="f-hr_contact_phone" type="tel" class="field"></div>
+                  <div><label class="field-label" for="f-hr_contact_email">Email</label><input id="f-hr_contact_email" type="email" class="field"></div>
+                </div>
+              </div>
+              <div id="self-employed-wrap" class="hidden grid sm:grid-cols-3 gap-5">
+                <div><label class="field-label" for="f-business_name">Business name *</label><input id="f-business_name" class="field"></div>
+                <div><label class="field-label" for="f-business_registration">Registration number</label><input id="f-business_registration" class="field"></div>
+                <div><label class="field-label" for="f-accountant_contact">Accountant's name and phone</label><input id="f-accountant_contact" class="field"></div>
+              </div>
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-gross_monthly_income">Gross monthly income (R) *</label><input id="f-gross_monthly_income" type="number" min="0" step="1" class="field" required></div>
+                <div><label class="field-label" for="f-net_monthly_income">Net monthly income after deductions (R) *</label><input id="f-net_monthly_income" type="number" min="0" step="1" class="field" required></div>
+                <div><label class="field-label" for="f-other_monthly_income">Other regular monthly income (R)</label><input id="f-other_monthly_income" type="number" min="0" step="1" class="field"></div>
+                <div><label class="field-label" for="f-other_income_source">Source of other income</label><input id="f-other_income_source" class="field" placeholder="e.g. partner's salary, rental income"></div>
+              </div>
+              <p id="affordability-hint" class="hidden rounded-xl px-4 py-3 text-sm"></p>
+            </div>
+
+            <!-- Step 4 -->
+            <div data-step="4" data-title="Rental history and references" class="space-y-5 hidden">
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-time_at_current_address">How long at your current address?</label><input id="f-time_at_current_address" class="field" placeholder="e.g. 2 years 3 months"></div>
+                <div><label class="field-label" for="f-current_rent">Current monthly rent (R)</label><input id="f-current_rent" type="number" min="0" class="field" placeholder="Leave blank if not renting"></div>
+              </div>
+              <p class="text-sm font-semibold text-navy">Current landlord or agent</p>
+              <div class="grid sm:grid-cols-3 gap-5">
+                <div><label class="field-label" for="f-current_landlord_name">Name</label><input id="f-current_landlord_name" class="field"></div>
+                <div><label class="field-label" for="f-current_landlord_phone">Phone</label><input id="f-current_landlord_phone" type="tel" class="field"></div>
+                <div><label class="field-label" for="f-current_landlord_email">Email</label><input id="f-current_landlord_email" type="email" class="field"></div>
+              </div>
+              <div><label class="field-label" for="f-reason_for_moving">Reason for moving</label><input id="f-reason_for_moving" class="field"></div>
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-previous_address">Previous address (if under 2 years at current one)</label><input id="f-previous_address" class="field"></div>
+                <div><label class="field-label" for="f-previous_landlord_contact">Previous landlord name and phone</label><input id="f-previous_landlord_contact" class="field"></div>
+              </div>
+
+              <p class="text-sm font-semibold text-navy pt-2">Monthly commitments</p>
+              <div><label class="field-label" for="f-monthly_debt_instalments">Total monthly instalments: loans, car finance, store accounts, credit cards (R)</label><input id="f-monthly_debt_instalments" type="number" min="0" class="field" placeholder="0"></div>
+              <label class="flex items-start gap-3 text-sm text-gray-700"><input id="f-adverse_history_declared" type="checkbox" class="mt-1"> I have been evicted, or have had a judgment or default listing against me</label>
+              <div id="adverse-wrap" class="hidden"><label class="field-label" for="f-adverse_history_explanation">Please explain, including whether it has been settled</label><textarea id="f-adverse_history_explanation" rows="3" class="field"></textarea></div>
+
+              <p class="text-sm font-semibold text-navy pt-2">Emergency contact (not living with you)</p>
+              <div class="grid sm:grid-cols-3 gap-5">
+                <div><label class="field-label" for="f-emergency_contact_name">Name</label><input id="f-emergency_contact_name" class="field"></div>
+                <div><label class="field-label" for="f-emergency_contact_relationship">Relationship</label><input id="f-emergency_contact_relationship" class="field"></div>
+                <div><label class="field-label" for="f-emergency_contact_phone">Phone</label><input id="f-emergency_contact_phone" type="tel" class="field"></div>
+              </div>
+
+              <label class="flex items-start gap-3 text-sm text-gray-700 pt-2"><input id="f-has_surety" type="checkbox" class="mt-1"> I am adding a surety (someone who will guarantee the rent)</label>
+              <div id="surety-wrap" class="hidden grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="f-surety_full_name">Surety full name *</label><input id="f-surety_full_name" class="field"></div>
+                <div><label class="field-label" for="f-surety_id_number">Surety ID number *</label><input id="f-surety_id_number" class="field"></div>
+                <div><label class="field-label" for="f-surety_relationship">Relationship to you</label><input id="f-surety_relationship" class="field"></div>
+                <div><label class="field-label" for="f-surety_phone">Surety phone</label><input id="f-surety_phone" type="tel" class="field"></div>
+                <div class="sm:col-span-2"><label class="field-label" for="f-surety_email">Surety email</label><input id="f-surety_email" type="email" class="field"></div>
+              </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div data-step="5" data-title="Supporting documents" class="space-y-4 hidden">
+              <p class="text-sm text-gray-500">PDF, JPG, PNG or HEIC, up to 10 MB each. Please upload bank statements as the PDF downloaded from your banking app or website. Your documents are stored privately and seen only by Zanka Group.</p>
+              <div id="docs-list" class="space-y-4"></div>
+            </div>
+
+            <!-- Step 6 -->
+            <div data-step="6" data-title="Consent and declaration" class="space-y-5 hidden">
+              <pre id="consent-text" class="whitespace-pre-wrap text-xs leading-relaxed text-gray-700 bg-offwhite rounded-xl p-4 max-h-72 overflow-y-auto font-sans"></pre>
+              <div class="grid sm:grid-cols-2 gap-5">
+                <div><label class="field-label" for="c-name">Your full name *</label><input id="c-name" class="field" required></div>
+                <div><label class="field-label" for="c-id">Your ID or passport number *</label><input id="c-id" class="field" required></div>
+              </div>
+              <label class="flex items-start gap-3 text-sm text-gray-700"><input id="c-consent" type="checkbox" class="mt-1" required> I have read and give the consent above.</label>
+
+              <div id="consent-surety-wrap" class="hidden space-y-4 rounded-xl border border-gray-200 p-4">
+                <p class="text-sm font-semibold text-navy">Surety consent</p>
+                <p class="text-xs text-gray-500">Your surety must agree to the same checks. Only tick this if they have read the consent above and agreed.</p>
+                <div class="grid sm:grid-cols-2 gap-5">
+                  <div><label class="field-label" for="c-surety-name">Surety full name</label><input id="c-surety-name" class="field"></div>
+                  <div><label class="field-label" for="c-surety-id">Surety ID number</label><input id="c-surety-id" class="field"></div>
+                </div>
+                <label class="flex items-start gap-3 text-sm text-gray-700"><input id="c-surety-consent" type="checkbox" class="mt-1"> My surety has read and gives the consent above.</label>
+              </div>
+
+              <div class="rounded-xl bg-offwhite p-4 text-sm text-gray-700">
+                <label class="flex items-start gap-3"><input id="c-declaration" type="checkbox" class="mt-1" required>
+                  <span>I confirm the information in this application is true and complete. I understand that false information is grounds to decline my application or to cancel any lease concluded on the strength of it, and that submitting this application does not guarantee a lease.</span></label>
+              </div>
+            </div>
+
+            <p id="form-error" class="hidden mt-5 rounded-xl bg-red-50 text-red-700 px-4 py-3 text-sm" role="alert"></p>
+            <p id="submit-progress" class="hidden mt-5 text-sm text-gray-500" aria-live="polite"></p>
+
+            <div class="flex items-center justify-between mt-8">
+              <button type="button" id="btn-back" class="btn btn-outline-navy invisible">Back</button>
+              <button type="button" id="btn-next" class="btn btn-primary">Continue</button>
+              <button type="submit" id="btn-submit" class="btn btn-primary hidden">Submit application</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Success -->
+        <div id="success-view" class="hidden rounded-2xl bg-white border border-gray-200 p-8 text-center scroll-mt-24">
+          <div class="w-14 h-14 rounded-full bg-green-100 text-green-700 flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7"/></svg>
+          </div>
+          <h2 class="font-display font-bold text-navy text-2xl mb-2">Application received</h2>
+          <p class="text-gray-600 mb-4">Your reference is <span id="success-reference" class="font-semibold text-navy"></span>.</p>
+          <p class="text-sm text-gray-500 max-w-md mx-auto">We will verify your details and contact you at <span id="success-email" class="font-semibold"></span> once screening is complete, usually within a few working days. Every applicant hears back in writing.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer class="bg-navy-deep text-gray-300">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 py-16 grid grid-cols-2 md:grid-cols-5 gap-10">
+    <div class="col-span-2">
+      <a href="index.html" class="flex items-center gap-2.5 mb-4">
+        <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+        <span class="leading-none">
+          <span class="block font-display font-bold text-white text-lg">ZANKA GROUP</span>
+        </span>
+      </a>
+      <p class="text-sm text-gray-400 max-w-xs">Build Wealth Through Property. We&rsquo;ll Manage the Rest.</p>
+      <div class="flex flex-wrap gap-3 mt-5">
+        <a href="tenant-login.html" class="text-xs font-semibold px-4 py-2 rounded-full border border-gray-600 hover:border-gold hover:text-gold transition">Tenant Portal</a>
+        <a href="owner-login.html" class="text-xs font-semibold px-4 py-2 rounded-full border border-gray-600 hover:border-gold hover:text-gold transition">Owner Portal</a>
+        <a href="admin-login.html" class="text-xs font-semibold px-4 py-2 rounded-full border border-gray-600 hover:border-gold hover:text-gold transition">Admin</a>
+      </div>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Company</h4>
+      <ul class="space-y-2.5 text-sm">
+        <li><a href="about.html" class="hover:text-gold transition">About Us</a></li>
+        <li><a href="services.html" class="hover:text-gold transition">Services</a></li>
+        <li><a href="pricing.html" class="hover:text-gold transition">Pricing</a></li>
+        <li><a href="resources.html" class="hover:text-gold transition">Resources</a></li>
+        <li><a href="contact.html" class="hover:text-gold transition">Contact</a></li>
+        <li><a href="for-landlords.html" class="hover:text-gold transition">For Landlords</a></li>
+        <li><a href="for-investors.html" class="hover:text-gold transition">For Investors</a></li>
+        <li><a href="insights.html" class="hover:text-gold transition">Insights</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Services</h4>
+      <ul class="space-y-2.5 text-sm">
+        <li><a href="services.html#property-management" class="hover:text-gold transition">Property Management</a></li>
+        <li><a href="services.html#tenant-placement" class="hover:text-gold transition">Tenant Placement</a></li>
+        <li><a href="services.html#investment-advisory" class="hover:text-gold transition">Investment Advisory</a></li>
+        <li><a href="services.html#maintenance-management" class="hover:text-gold transition">Maintenance Management</a></li>
+        <li><a href="services.html#lease-administration" class="hover:text-gold transition">Lease Administration</a></li>
+        <li><a href="services.html#inspections" class="hover:text-gold transition">Inspection Services</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-semibold mb-4 text-sm tracking-wide">Contact</h4>
+      <ul class="space-y-2.5 text-sm text-gray-400">
+        <li><a href="tel:0748248812" class="hover:text-gold transition">074 824 8812</a></li>
+        <li><a href="mailto:info@zankagroup.co.za" class="hover:text-gold transition">info@zankagroup.co.za</a></li>
+        <li>Sandton, Johannesburg,<br>South Africa</li>
+        <li><a href="https://wa.me/27748248812" class="hover:text-gold transition">Chat on WhatsApp</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+      <p>&copy; <span data-year></span> Zanka Group (Pty) Ltd. All rights reserved.</p>
+      <div class="flex gap-5">
+        <a href="terms.html" class="hover:text-gold transition">Terms &amp; Conditions</a>
+        <a href="refund-policy.html" class="hover:text-gold transition">Refund &amp; Cancellation Policy</a>
+        <a href="privacy.html" class="hover:text-gold transition">Privacy Policy</a>
+        <a href="popia.html" class="hover:text-gold transition">POPIA Notice</a>
+      </div>
+    </div>
+  </div>
+</footer>
+<script src="assets/js/main.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/apply.js"></script>
+
+</body>
+</html>

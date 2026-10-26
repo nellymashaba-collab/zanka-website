@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tenant Recruitment | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  /* Panels on this page hold forms and tables: no hover lift. */
+  .panel{background:#fff;border-radius:1rem;box-shadow:0 1px 2px rgba(20,28,48,.05),0 8px 24px -12px rgba(20,28,48,.12);}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .65rem;border-radius:9999px;white-space:nowrap;}
+  .tab-btn[aria-selected="true"]{color:#1F2A44;border-color:#C89B3C;}
+</style>
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+    <div>
+      <a href="admin-dashboard.html" class="text-sm text-gray-500 hover:text-gold">&larr; Admin dashboard</a>
+      <p class="eyebrow mt-3 mb-1">Leasing</p>
+      <h1 class="font-display font-bold text-navy text-3xl">Tenant Recruitment</h1>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <a href="apply.html" target="_blank" rel="noopener" class="btn btn-outline-navy !py-2.5 text-sm">View public page</a>
+      <button id="btn-settings" class="btn btn-outline-navy !py-2.5 text-sm">Screening settings</button>
+      <button id="btn-new-vacancy" class="btn btn-primary !py-2.5 text-sm">+ New vacancy</button>
+    </div>
+  </div>
+
+  <p id="settings-banner" class="hidden mb-6 rounded-xl bg-amber-50 text-amber-800 px-4 py-3 text-sm">
+    Screening thresholds are still the draft values from the recruitment pack and have not been confirmed by your property practitioner.
+    <button id="settings-banner-open" class="font-semibold underline">Review settings</button>
+  </p>
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+    <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Open vacancies</p><p id="kpi-open" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+    <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">New applications</p><p id="kpi-new" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+    <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">In screening</p><p id="kpi-screening" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+    <div class="panel p-5"><p class="text-xs text-gray-500 mb-1">Offers awaiting reply</p><p id="kpi-offers" class="font-display font-bold text-navy text-2xl">&mdash;</p></div>
+  </div>
+
+  <!-- Vacancies -->
+  <div class="panel p-6 mb-8">
+    <h2 class="font-display font-semibold text-navy text-lg mb-1">Vacancies</h2>
+    <p class="text-sm text-gray-500 mb-4">Only vacancies set to Open appear on the public page. Public listings never show the property address or unit number.</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">Listing</th><th class="py-2 px-3 font-semibold">Property</th>
+          <th class="py-2 px-3 font-semibold text-right">Rent</th><th class="py-2 px-3 font-semibold">Available</th>
+          <th class="py-2 px-3 font-semibold text-right">Applications</th><th class="py-2 px-3 font-semibold">Status</th><th class="py-2 px-3 font-semibold">Actions</th>
+        </tr></thead>
+        <tbody id="vacancies-tbody"><tr><td colspan="7" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Applications -->
+  <div class="panel p-6">
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <h2 class="font-display font-semibold text-navy text-lg mb-1">Applications</h2>
+        <p class="text-sm text-gray-500">Sorted by score. Open an application to verify, score and decide.</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <select id="filter-vacancy" class="field !w-auto !py-2 text-sm"><option value="">All vacancies</option></select>
+        <select id="filter-status" class="field !w-auto !py-2 text-sm">
+          <option value="active">Active (not closed)</option><option value="">All statuses</option>
+          <option>Submitted</option><option>Screening</option><option>Shortlisted</option><option>Reserve</option>
+          <option>Offered</option><option>Accepted</option><option>Lease created</option><option>Declined</option><option>Withdrawn</option>
+        </select>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
+          <th class="py-2 px-3 font-semibold">Applicant</th><th class="py-2 px-3 font-semibold">Vacancy</th>
+          <th class="py-2 px-3 font-semibold">Submitted</th><th class="py-2 px-3 font-semibold text-right">Rent ÷ income</th>
+          <th class="py-2 px-3 font-semibold text-right">Score</th><th class="py-2 px-3 font-semibold">Recommendation</th>
+          <th class="py-2 px-3 font-semibold">Status</th>
+        </tr></thead>
+        <tbody id="applications-tbody"><tr><td colspan="7" class="py-6 px-3 text-gray-400">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- ============ Vacancy modal ============ -->
+<div id="vacancy-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
+  <form id="vacancy-form" class="panel p-6 max-w-2xl w-full my-8">
+    <div class="flex items-center justify-between mb-5">
+      <h3 id="vacancy-modal-title" class="font-display font-semibold text-navy text-xl">New vacancy</h3>
+      <button type="button" data-close="vacancy-modal" class="text-2xl text-gray-400 hover:text-navy" aria-label="Close">&times;</button>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="sm:col-span-2"><label class="field-label" for="vf-property">Property (private, not shown publicly) *</label><select id="vf-property" class="field" required></select></div>
+      <div class="sm:col-span-2"><label class="field-label" for="vf-title">Public listing title *</label><input id="vf-title" class="field" required placeholder="2-bed apartment with parking, Kensington"><p class="text-xs text-gray-400 mt-1">Do not include the unit number.</p></div>
+      <div><label class="field-label" for="vf-area">Area *</label><input id="vf-area" class="field" required value="Kensington, Johannesburg"></div>
+      <div><label class="field-label" for="vf-status">Status</label><select id="vf-status" class="field"><option>Draft</option><option>Open</option><option>Closed</option><option>Let</option></select></div>
+      <div><label class="field-label" for="vf-rent">Monthly rent (R) *</label><input id="vf-rent" type="number" min="1" step="1" class="field" required></div>
+      <div><label class="field-label" for="vf-deposit">Deposit (R)</label><input id="vf-deposit" type="number" min="0" step="1" class="field"></div>
+      <div><label class="field-label" for="vf-available">Available from</label><input id="vf-available" type="date" class="field"></div>
+      <div><label class="field-label" for="vf-closes">Applications close</label><input id="vf-closes" type="datetime-local" class="field"></div>
+      <div><label class="field-label" for="vf-bedrooms">Bedrooms</label><input id="vf-bedrooms" type="number" min="0" class="field"></div>
+      <div><label class="field-label" for="vf-bathrooms">Bathrooms</label><input id="vf-bathrooms" type="number" min="0" step="0.5" class="field"></div>
+      <div><label class="field-label" for="vf-parking">Parking bays</label><input id="vf-parking" type="number" min="0" class="field"></div>
+      <div><label class="field-label" for="vf-max-occupants">Maximum occupants</label><input id="vf-max-occupants" type="number" min="1" class="field"></div>
+      <div class="sm:col-span-2"><label class="field-label" for="vf-pets">Pets policy</label><input id="vf-pets" class="field" value="No pets"></div>
+      <div class="sm:col-span-2"><label class="field-label" for="vf-features">Features (one per line)</label><textarea id="vf-features" rows="4" class="field" placeholder="Open-plan lounge and kitchen&#10;Bathroom with shower and bath&#10;Washer and dryer included&#10;Access-controlled security"></textarea></div>
+      <div class="sm:col-span-2"><label class="field-label" for="vf-description">Description</label><textarea id="vf-description" rows="4" class="field" placeholder="Nearby transport, schools, shops, commute times"></textarea></div>
+    </div>
+    <p id="vacancy-error" class="hidden mt-4 text-sm text-red-600"></p>
+    <div class="flex justify-end gap-3 mt-6">
+      <button type="button" data-close="vacancy-modal" class="btn btn-outline-navy !py-2.5 text-sm">Cancel</button>
+      <button type="submit" id="vacancy-save" class="btn btn-primary !py-2.5 text-sm">Save vacancy</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ Application modal ============ -->
+<div id="app-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
+  <div class="panel max-w-6xl w-full my-8">
+    <div class="flex flex-wrap items-start justify-between gap-4 p-6 border-b border-gray-100">
+      <div>
+        <p id="am-reference" class="eyebrow mb-1"></p>
+        <h3 id="am-name" class="font-display font-bold text-navy text-2xl"></h3>
+        <p id="am-sub" class="text-sm text-gray-500"></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="am-status"></span>
+        <button type="button" data-close="app-modal" class="text-2xl text-gray-400 hover:text-navy" aria-label="Close">&times;</button>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-5">
+      <!-- Left: tabs -->
+      <div class="lg:col-span-3 p-6 border-b lg:border-b-0 lg:border-r border-gray-100">
+        <div class="flex gap-5 border-b border-gray-200 mb-5 text-sm" role="tablist">
+          <button class="tab-btn pb-2 -mb-px border-b-2 border-transparent text-gray-500 font-semibold" data-tab="details" aria-selected="true">Application</button>
+          <button class="tab-btn pb-2 -mb-px border-b-2 border-transparent text-gray-500 font-semibold" data-tab="verify" aria-selected="false">Verify and score</button>
+          <button class="tab-btn pb-2 -mb-px border-b-2 border-transparent text-gray-500 font-semibold" data-tab="documents" aria-selected="false">Documents</button>
+          <button class="tab-btn pb-2 -mb-px border-b-2 border-transparent text-gray-500 font-semibold" data-tab="history" aria-selected="false">History</button>
+        </div>
+
+        <div data-tab-panel="details" id="am-details" class="text-sm"></div>
+
+        <div data-tab-panel="verify" class="hidden">
+          <form id="screen-form" class="space-y-5 text-sm">
+            <div class="rounded-xl bg-offwhite p-4 text-xs text-gray-600">
+              Verify independently: find the employer's switchboard yourself and ask for HR, and confirm the "landlord" actually owns or manages the address. Run the credit check last, only once documents pass.
+            </div>
+            <fieldset class="space-y-2">
+              <legend class="font-semibold text-navy mb-2">Verification</legend>
+              <label class="flex items-start gap-3"><input type="checkbox" id="sf-identity_verified" class="mt-0.5"> Identity: ID matches credit report name, ID number and date of birth</label>
+              <label class="flex items-start gap-3"><input type="checkbox" id="sf-employer_verified" class="mt-0.5"> Employer: confirmed via switchboard / HR (job, start date, type)</label>
+              <label class="flex items-start gap-3"><input type="checkbox" id="sf-income_verified" class="mt-0.5"> Income: payslip net pay matches salary deposits on bank statements</label>
+              <label class="flex items-start gap-3"><input type="checkbox" id="sf-landlord_verified" class="mt-0.5"> Landlord: confirmed they own or manage the address</label>
+              <label class="flex items-start gap-3 text-red-700"><input type="checkbox" id="sf-document_mismatch" class="mt-0.5"> A document is altered or doesn't match bureau, bank or employer (knockout)</label>
+            </fieldset>
+            <div class="grid sm:grid-cols-3 gap-4">
+              <div><label class="field-label" for="sf-credit_score">Credit score</label><input id="sf-credit_score" type="number" min="0" max="999" class="field"></div>
+              <div><label class="field-label" for="sf-credit_bureau">Bureau</label><input id="sf-credit_bureau" class="field" placeholder="e.g. TPN"></div>
+              <div><label class="field-label" for="sf-credit_checked_at">Checked on</label><input id="sf-credit_checked_at" type="date" class="field"></div>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-4">
+              <div><label class="field-label" for="sf-adverse_listing_found">Judgment / adverse listing (last 3 years)</label>
+                <select id="sf-adverse_listing_found" class="field"><option value="">Not yet checked</option><option value="false">None, or settled and explained</option><option value="true">Found, unsettled or unexplained (knockout)</option></select></div>
+              <div><label class="field-label" for="sf-landlord_reference">Landlord reference</label>
+                <select id="sf-landlord_reference" class="field"><option value="">Not yet captured</option><option value="positive">Paid on time, would rent again</option><option value="minor_late">Minor late payments, resolved</option><option value="none">No reference (first-time renter)</option><option value="negative">Negative: arrears, damage, eviction (knockout)</option></select></div>
+              <div class="sm:col-span-2"><label class="field-label" for="sf-application_quality">Application quality</label>
+                <select id="sf-application_quality" class="field"><option value="">Not yet rated</option><option value="complete">Complete first time, prompt</option><option value="follow_up">Needed follow-up</option><option value="chasing">Repeated chasing</option></select></div>
+            </div>
+            <div><label class="field-label" for="sf-red_flags">Red flags noticed</label><textarea id="sf-red_flags" rows="2" class="field"></textarea></div>
+            <div><label class="field-label" for="sf-screening_notes">Screening notes (one line per factor, so the decision can be explained later)</label><textarea id="sf-screening_notes" rows="3" class="field"></textarea></div>
+            <p id="screen-msg" class="hidden text-sm"></p>
+            <button type="submit" class="btn btn-primary !py-2.5 text-sm">Save screening</button>
+          </form>
+        </div>
+
+        <div data-tab-panel="documents" class="hidden" id="am-documents"></div>
+        <div data-tab-panel="history" class="hidden" id="am-history"></div>
+      </div>
+
+      <!-- Right: score + decision -->
+      <div class="lg:col-span-2 p-6 bg-offwhite/60 rounded-br-2xl">
+        <div id="am-score"></div>
+        <div id="am-actions" class="mt-6"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Settings modal ============ -->
+<div id="settings-modal" class="hidden fixed inset-0 bg-navy-deep/60 z-50 flex items-start justify-center p-5 overflow-y-auto">
+  <form id="settings-form" class="panel p-6 max-w-2xl w-full my-8">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-display font-semibold text-navy text-xl">Screening settings</h3>
+      <button type="button" data-close="settings-modal" class="text-2xl text-gray-400 hover:text-navy" aria-label="Close">&times;</button>
+    </div>
+    <p class="text-sm text-gray-500 mb-5">These drive the public minimum income, the knockouts and the score. Ratios are entered as percentages.</p>
+    <div class="grid sm:grid-cols-3 gap-4 text-sm">
+      <p class="sm:col-span-3 font-semibold text-navy">Affordability (rent ÷ gross household income)</p>
+      <div><label class="field-label" for="st-aff-full">Full marks up to (%)</label><input id="st-aff-full" type="number" step="0.5" min="1" max="100" class="field"></div>
+      <div><label class="field-label" for="st-aff-half">Half marks up to (%)</label><input id="st-aff-half" type="number" step="0.5" min="1" max="100" class="field"></div>
+      <div><label class="field-label" for="st-aff-ko">Knockout above (%)</label><input id="st-aff-ko" type="number" step="0.5" min="1" max="100" class="field"></div>
+      <p class="sm:col-span-3 font-semibold text-navy pt-2">Credit score</p>
+      <div><label class="field-label" for="st-credit-full">Full marks from</label><input id="st-credit-full" type="number" min="0" max="999" class="field"></div>
+      <div><label class="field-label" for="st-credit-half">Half marks from</label><input id="st-credit-half" type="number" min="0" max="999" class="field"></div>
+      <div></div>
+      <p class="sm:col-span-3 font-semibold text-navy pt-2">Debt burden (instalments ÷ net income)</p>
+      <div><label class="field-label" for="st-debt-full">Full marks up to (%)</label><input id="st-debt-full" type="number" step="0.5" min="0" max="100" class="field"></div>
+      <div><label class="field-label" for="st-debt-half">Half marks up to (%)</label><input id="st-debt-half" type="number" step="0.5" min="0" max="100" class="field"></div>
+      <div></div>
+      <p class="sm:col-span-3 font-semibold text-navy pt-2">Decision and process</p>
+      <div><label class="field-label" for="st-approve">Approve from score</label><input id="st-approve" type="number" min="0" max="100" class="field"></div>
+      <div><label class="field-label" for="st-conditional">Conditional from score</label><input id="st-conditional" type="number" min="0" max="100" class="field"></div>
+      <div><label class="field-label" for="st-offer-hours">Offer valid (hours)</label><input id="st-offer-hours" type="number" min="1" max="336" class="field"></div>
+      <div><label class="field-label" for="st-retention">Keep declined documents (days)</label><input id="st-retention" type="number" min="1" max="3650" class="field"></div>
+      <div class="sm:col-span-3 rounded-xl border border-gray-200 p-4 space-y-3">
+        <label class="flex items-start gap-3"><input type="checkbox" id="st-confirmed" class="mt-0.5"> These values have been confirmed by our property practitioner for this market</label>
+        <input id="st-confirmed-note" class="field" placeholder="Who confirmed, and when (e.g. Thato, email 2 Nov 2026)">
+      </div>
+    </div>
+    <p id="settings-msg" class="hidden mt-4 text-sm"></p>
+    <div class="flex flex-wrap items-center justify-between gap-3 mt-6">
+      <button type="button" id="btn-purge" class="text-sm font-semibold text-red-700 hover:underline">Delete expired documents of declined applicants</button>
+      <div class="flex gap-3">
+        <button type="button" data-close="settings-modal" class="btn btn-outline-navy !py-2.5 text-sm">Cancel</button>
+        <button type="submit" class="btn btn-primary !py-2.5 text-sm">Save settings</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/recruitment-scoring.js"></script>
+<script src="assets/js/tenant-recruitment.js"></script>
+
+</body>
+</html>
