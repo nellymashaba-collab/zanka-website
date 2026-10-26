@@ -114,7 +114,10 @@
   <!-- ============ ARREARS ============ -->
   <section data-panel="arrears" class="hidden space-y-8">
     <div class="panel p-6">
-      <h2 class="font-display font-semibold text-navy text-lg mb-1">Overdue rent</h2>
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-1">
+        <h2 class="font-display font-semibold text-navy text-lg">Overdue rent</h2>
+        <a href="age-analysis.html" class="btn btn-outline-navy !py-2 !px-4 text-sm">Age analysis</a>
+      </div>
       <p class="text-sm text-gray-500 mb-4">Reminders go out automatically on day <span data-setting="arrears_reminder_1_days">3</span> and day <span data-setting="arrears_reminder_2_days">7</span>; on day <span data-setting="arrears_demand_days">14</span> a letter of demand is prepared for you to approve. Rent due before <span data-setting="arrears_automation_start">—</span> is listed here but handled by you, not automatically. Record payments in the <a class="text-gold font-semibold hover:underline" href="admin-dashboard.html">Payments</a> section as usual; paid amounts drop off this list.</p>
       <div class="overflow-x-auto"><table class="w-full text-left text-sm">
         <thead><tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-400">
