@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://zankagroup.co.za/sitemap.xml
