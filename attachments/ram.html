@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roberts Avenue Mansions · Building issues | Zanka Group</title>
+<meta name="description" content="Log and track maintenance issues at Roberts Avenue Mansions.">
+<meta name="robots" content="noindex, nofollow">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .panel{background:#fff;border-radius:1rem;box-shadow:0 1px 2px rgba(20,28,48,.05),0 8px 24px -12px rgba(20,28,48,.12);}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .65rem;border-radius:9999px;white-space:nowrap;}
+  .seg button[aria-pressed="true"]{background:#1F2A44;color:#fff;border-color:#1F2A44;}
+  .bucket-bar{height:8px;border-radius:999px;background:#EEF0F4;overflow:hidden}
+  .bucket-bar span{display:block;height:100%;border-radius:999px}
+  .b1{background:#9CA3AF}.b2{background:#C89B3C}.b3{background:#D97706}.b4{background:#EA580C}.b5{background:#DC2626}
+  .num{font-variant-numeric:tabular-nums;}
+</style>
+</head>
+<body class="bg-offwhite antialiased" data-building="ram">
+<header class="bg-white border-b border-gray-100">
+  <div class="max-w-5xl mx-auto px-5 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+    <a href="index.html" class="flex items-center gap-2.5">
+      <span class="w-9 h-9 rounded-md bg-gold text-navy-deep font-display font-bold text-lg flex items-center justify-center">Z</span>
+      <span class="leading-none">
+        <span class="block font-display font-bold text-navy text-lg tracking-tight">ZANKA</span>
+        <span class="block text-[10px] tracking-[0.25em] text-gray-500 font-semibold">GROUP</span>
+      </span>
+    </a>
+    <button id="btn-lock" class="hidden text-sm text-gray-500 hover:text-gold">Lock this page</button>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-5 sm:px-8 py-8">
+  <p class="eyebrow mb-1">Building issues</p>
+  <h1 id="building-name" class="font-display font-bold text-navy text-3xl">Roberts Avenue Mansions</h1>
+  <p class="text-gray-600 mt-2 max-w-2xl">Log a maintenance problem in the building or your unit, and follow it until it is fixed. Every issue gets a reference number, a response deadline and a visible status, so nothing gets lost.</p>
+
+  <p id="status" class="text-gray-500 mt-6">Loading…</p>
+
+  <!-- Access code -->
+  <section id="gate" class="hidden panel p-6 mt-6 max-w-md">
+    <h2 class="font-display font-semibold text-navy text-lg">Enter the building access code</h2>
+    <p class="text-sm text-gray-500 mt-1 mb-4">The code keeps this page for RAM owners, tenants, trustees and staff. Ask your trustees or Zanka Group if you don't have it.</p>
+    <form id="gate-form" class="flex gap-2">
+      <label for="access-code" class="sr-only">Access code</label>
+      <input id="access-code" class="field !py-2.5" autocomplete="off" autocapitalize="characters" required>
+      <button class="btn btn-primary !py-2.5 text-sm whitespace-nowrap" id="gate-submit">Open</button>
+    </form>
+    <p id="gate-error" class="hidden text-sm text-red-600 mt-3"></p>
+  </section>
+
+  <div id="app" class="hidden">
+    <!-- Summary -->
+    <section class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+      <div class="panel p-4"><p class="text-xs text-gray-500">Open issues</p><p id="k-open" class="font-display font-bold text-navy text-2xl num">0</p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Past deadline</p><p id="k-overdue" class="font-display font-bold text-2xl num text-red-600">0</p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Average days open</p><p id="k-avg" class="font-display font-bold text-navy text-2xl num">0</p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Fixed in last 30 days</p><p id="k-fixed" class="font-display font-bold text-navy text-2xl num">0</p></div>
+    </section>
+
+    <section class="panel p-5 mt-3">
+      <h2 class="font-semibold text-navy text-sm mb-3">How long open issues have been waiting</h2>
+      <div id="buckets" class="grid grid-cols-2 sm:grid-cols-5 gap-4"></div>
+    </section>
+
+    <div class="flex flex-wrap items-center gap-3 mt-8 mb-4">
+      <div class="seg flex rounded-full border border-gray-300 overflow-hidden" role="group" aria-label="View">
+        <button type="button" data-tab="log" aria-pressed="true" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Log an issue</button>
+        <button type="button" data-tab="board" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy">Issue board</button>
+      </div>
+    </div>
+
+    <!-- Log form -->
+    <section id="tab-log" class="panel p-6">
+      <form id="issue-form" class="grid sm:grid-cols-2 gap-4" novalidate>
+        <div class="sm:col-span-2">
+          <span class="field-label">Where is the problem?</span>
+          <div class="flex flex-wrap gap-4 text-sm text-navy">
+            <label class="flex items-center gap-2"><input type="radio" name="location_type" value="Common property" checked> Common property (gates, parking, passages, roof…)</label>
+            <label class="flex items-center gap-2"><input type="radio" name="location_type" value="Unit"> Inside my unit</label>
+          </div>
+        </div>
+        <div id="unit-wrap" class="hidden"><label class="field-label" for="unit_label">Unit number</label><input id="unit_label" class="field" maxlength="20" inputmode="numeric"></div>
+        <div><label class="field-label" for="location_detail">Exact spot <span class="text-gray-400 font-normal">(optional)</span></label><input id="location_detail" class="field" maxlength="120" placeholder="e.g. main parking gate, 2nd floor passage"></div>
+        <div><label class="field-label" for="category">Type of problem</label>
+          <select id="category" class="field" required>
+            <option value="">Choose…</option>
+            <option>Plumbing</option><option>Electrical</option><option>Gates &amp; access</option><option>Security &amp; cameras</option>
+            <option>Roof &amp; waterproofing</option><option>Building &amp; masonry</option><option>Carpentry</option><option>Painting</option>
+            <option>Garden &amp; grounds</option><option>Cleaning &amp; refuse</option><option>Pest control</option><option>Parking</option><option>Other</option>
+          </select>
+        </div>
+        <div><label class="field-label" for="urgency">How urgent?</label>
+          <select id="urgency" class="field">
+            <option value="Routine">Routine</option>
+            <option value="Urgent">Urgent — affects daily living or security</option>
+            <option value="Emergency">Emergency — flooding, no water, gate stuck open, danger</option>
+          </select>
+          <p id="sla-note" class="text-xs text-gray-500 mt-1"></p>
+        </div>
+        <div class="sm:col-span-2"><label class="field-label" for="title">Short title</label><input id="title" class="field" maxlength="120" required placeholder="e.g. Main gate not closing"></div>
+        <div class="sm:col-span-2"><label class="field-label" for="description">What's happening? <span class="text-gray-400 font-normal">(optional)</span></label><textarea id="description" class="field" rows="4" maxlength="2000"></textarea></div>
+        <div class="sm:col-span-2"><label class="field-label" for="photos">Photos <span class="text-gray-400 font-normal">(optional, up to 5)</span></label><input id="photos" type="file" accept="image/*" multiple class="block text-sm text-gray-600"></div>
+
+        <div class="sm:col-span-2 border-t border-gray-100 pt-4"><p class="text-sm font-semibold text-navy">Your details</p><p class="text-xs text-gray-500">Only Zanka Group sees these, so we can follow up. They never appear on the issue board.</p></div>
+        <div><label class="field-label" for="reporter_name">Name</label><input id="reporter_name" class="field" maxlength="100" required autocomplete="name"></div>
+        <div><label class="field-label" for="reporter_contact">Phone or email</label><input id="reporter_contact" class="field" maxlength="120" required autocomplete="tel"></div>
+        <div><label class="field-label" for="reporter_role">You are</label>
+          <select id="reporter_role" class="field"><option>Owner</option><option>Tenant</option><option>Trustee</option><option>Staff</option><option>Other</option></select>
+        </div>
+        <div class="sm:col-span-2"><label class="flex items-start gap-2 text-sm text-gray-600"><input id="consent" type="checkbox" class="mt-1"> <span>I agree that Zanka Group may use my name and contact details to deal with this issue, as set out in the <a href="popia.html" target="_blank" rel="noopener" class="text-gold underline">POPIA notice</a>.</span></label></div>
+        <div class="sm:col-span-2 flex flex-wrap items-center gap-4">
+          <button id="issue-submit" class="btn btn-primary !py-2.5 text-sm">Log issue</button>
+          <p id="form-msg" class="hidden text-sm"></p>
+        </div>
+        <p class="sm:col-span-2 text-xs text-gray-500">For a real emergency, also phone the guard on duty straight away.</p>
+      </form>
+    </section>
+
+    <!-- Board -->
+    <section id="tab-board" class="hidden">
+      <div class="flex flex-wrap gap-3 mb-4">
+        <div class="seg flex rounded-full border border-gray-300 overflow-hidden bg-white" role="group" aria-label="Filter">
+          <button type="button" data-filter="open" aria-pressed="true" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Open</button>
+          <button type="button" data-filter="overdue" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Past deadline</button>
+          <button type="button" data-filter="closed" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy">Recently fixed</button>
+        </div>
+        <label for="board-category" class="sr-only">Category</label>
+        <select id="board-category" class="field !w-auto !py-2 text-sm"><option value="">All types</option></select>
+      </div>
+      <div id="board" class="grid gap-3"></div>
+    </section>
+  </div>
+
+  <p class="text-xs text-gray-400 mt-10">Building issues for Roberts Avenue Mansions are run by <a href="index.html" class="hover:text-gold">Zanka Group</a>. Personal details are handled under our <a href="popia.html" class="hover:text-gold">POPIA notice</a>.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/building-page.js"></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Building Issues | Zanka Group</title>
+<meta name="robots" content="noindex, nofollow">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { navy: '#1F2A44', 'navy-deep': '#141C30', gold: '#C89B3C', 'gold-light': '#E4C77A', offwhite: '#F4F4F4' },
+          fontFamily: { display: ['Playfair Display', 'Georgia', 'serif'], sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .panel{background:#fff;border-radius:1rem;box-shadow:0 1px 2px rgba(20,28,48,.05),0 8px 24px -12px rgba(20,28,48,.12);}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.2rem .65rem;border-radius:9999px;white-space:nowrap;}
+  .seg button[aria-pressed="true"]{background:#1F2A44;color:#fff;border-color:#1F2A44;}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .hm1{background:#F3F4F6}.hm2{background:#FDF3DC}.hm3{background:#FDE2C4}.hm4{background:#FBCFB0}.hm5{background:#F8B4B4}
+  tbody tr.row{cursor:pointer} tbody tr.row:hover td{background:#FAFAF8}
+  dialog::backdrop{background:rgba(20,28,48,.45)}
+  dialog{border-radius:1rem;padding:0;max-width:min(760px,96vw);width:100%}
+  @media print{ .no-print{display:none !important} .panel{box-shadow:none;border:1px solid #d1d5db} body{background:#fff !important} }
+</style>
+</head>
+<body class="bg-offwhite antialiased">
+<main class="max-w-7xl mx-auto px-5 sm:px-8 py-8">
+
+  <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
+    <div>
+      <a href="admin-dashboard.html" class="no-print text-sm text-gray-500 hover:text-gold">&larr; Admin dashboard</a>
+      <p class="eyebrow mt-3 mb-1">Maintenance</p>
+      <h1 class="font-display font-bold text-navy text-3xl">Building issues</h1>
+      <p id="scope-line" class="text-sm text-gray-500 mt-1"></p>
+    </div>
+    <div class="no-print flex flex-wrap gap-2 items-center">
+      <label for="building" class="sr-only">Building</label>
+      <select id="building" class="field !w-auto !py-2.5 text-sm"></select>
+      <a id="public-link" href="ram.html" target="_blank" rel="noopener" class="btn btn-outline-navy !py-2.5 text-sm">View public page</a>
+      <button id="btn-settings" class="btn btn-outline-navy !py-2.5 text-sm">Settings</button>
+      <button id="btn-csv" class="btn btn-outline-navy !py-2.5 text-sm">Download CSV</button>
+      <button id="btn-print" class="btn btn-primary !py-2.5 text-sm">Print</button>
+    </div>
+  </div>
+
+  <p id="status" class="text-gray-500">Loading…</p>
+
+  <div id="report" class="hidden">
+    <section class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+      <div class="panel p-4"><p class="text-xs text-gray-500">Open</p><p id="k-open" class="font-display font-bold text-navy text-2xl"></p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Past deadline</p><p id="k-overdue" class="font-display font-bold text-red-600 text-2xl"></p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Not assigned</p><p id="k-unassigned" class="font-display font-bold text-navy text-2xl"></p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Awaiting approval</p><p id="k-approval" class="font-display font-bold text-navy text-2xl"></p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Avg days to fix (90d)</p><p id="k-fix" class="font-display font-bold text-navy text-2xl"></p></div>
+      <div class="panel p-4"><p class="text-xs text-gray-500">Open estimates</p><p id="k-value" class="font-display font-bold text-navy text-2xl"></p></div>
+    </section>
+
+    <section class="panel p-6 mb-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="font-display font-semibold text-navy text-lg">Age analysis — open issues</h2>
+          <p class="text-sm text-gray-500">Days since each open issue was logged.</p>
+        </div>
+        <div class="no-print seg flex rounded-full border border-gray-300 overflow-hidden" role="group" aria-label="Group by">
+          <button type="button" data-group="assigned_to" aria-pressed="true" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">By contractor</button>
+          <button type="button" data-group="category" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">By type</button>
+          <button type="button" data-group="status" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy">By status</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto"><table id="age-table" class="w-full text-sm"></table></div>
+    </section>
+
+    <section class="panel p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-display font-semibold text-navy text-lg">Issues</h2>
+        <div class="no-print flex flex-wrap gap-2">
+          <div class="seg flex rounded-full border border-gray-300 overflow-hidden" role="group" aria-label="Filter">
+            <button type="button" data-filter="open" aria-pressed="true" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Open</button>
+            <button type="button" data-filter="overdue" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Past deadline</button>
+            <button type="button" data-filter="closed" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy border-r border-gray-300">Closed</button>
+            <button type="button" data-filter="all" aria-pressed="false" class="px-4 py-2 text-sm font-semibold text-navy">All</button>
+          </div>
+          <label for="search" class="sr-only">Search</label>
+          <input id="search" type="search" placeholder="Search…" class="field !w-48 !py-2 text-sm">
+        </div>
+      </div>
+      <div class="overflow-x-auto"><table id="issues-table" class="w-full text-sm"></table></div>
+    </section>
+  </div>
+</main>
+
+<!-- Issue detail -->
+<dialog id="issue-dialog">
+  <form id="issue-edit" method="dialog" class="p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div><p id="d-ref" class="text-xs text-gray-400"></p><h2 id="d-title" class="font-display font-semibold text-navy text-xl"></h2></div>
+      <button type="button" data-close class="text-gray-400 hover:text-navy text-2xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div id="d-info" class="grid sm:grid-cols-2 gap-3 mt-4 text-sm"></div>
+    <div id="d-photos" class="flex flex-wrap gap-2 mt-3"></div>
+
+    <div class="grid sm:grid-cols-3 gap-4 mt-5 border-t border-gray-100 pt-5">
+      <div><label class="field-label" for="e-status">Status</label>
+        <select id="e-status" class="field !py-2"><option>Logged</option><option>Assigned</option><option>Awaiting approval</option><option>Approved</option><option>In progress</option><option>Completed</option><option>Closed</option><option>Rejected</option></select></div>
+      <div><label class="field-label" for="e-urgency">Urgency</label>
+        <select id="e-urgency" class="field !py-2"><option>Routine</option><option>Urgent</option><option>Emergency</option></select></div>
+      <div><label class="field-label" for="e-assigned">Assigned to</label><input id="e-assigned" class="field !py-2" list="assignees" maxlength="120"><datalist id="assignees"></datalist></div>
+      <div><label class="field-label" for="e-estimate">Estimate (R)</label><input id="e-estimate" type="number" min="0" step="0.01" class="field !py-2"></div>
+      <div><label class="field-label" for="e-quotes">Quotes received</label><input id="e-quotes" type="number" min="0" max="20" step="1" class="field !py-2"></div>
+      <div><label class="field-label" for="e-final">Final cost (R)</label><input id="e-final" type="number" min="0" step="0.01" class="field !py-2"></div>
+      <div class="sm:col-span-3"><label class="field-label" for="e-approved">Approved by (trustee)</label><input id="e-approved" class="field !py-2" maxlength="120"><p id="approval-rule" class="text-xs text-gray-500 mt-1"></p></div>
+      <div class="sm:col-span-3"><label class="field-label" for="e-note">Add an update</label><textarea id="e-note" rows="2" class="field" maxlength="1000"></textarea>
+        <label class="flex items-center gap-2 text-sm text-gray-600 mt-2"><input id="e-public" type="checkbox" checked> Show this update on the public board</label></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 mt-5">
+      <button id="e-save" type="submit" class="btn btn-primary !py-2.5 text-sm">Save</button>
+      <p id="e-msg" class="hidden text-sm"></p>
+    </div>
+
+    <h3 class="font-semibold text-navy text-sm mt-6 mb-2">History</h3>
+    <ol id="d-history" class="text-sm space-y-2"></ol>
+  </form>
+</dialog>
+
+<!-- Settings -->
+<dialog id="settings-dialog">
+  <form id="settings-form" method="dialog" class="p-6">
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <h2 class="font-display font-semibold text-navy text-xl">Building settings</h2>
+      <button type="button" data-close class="text-gray-400 hover:text-navy text-2xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div><label class="field-label" for="s-threshold">Approval needed above (R)</label><input id="s-threshold" type="number" min="0" step="100" class="field !py-2"></div>
+      <div><label class="field-label" for="s-quotes">Quotes needed above that</label><input id="s-quotes" type="number" min="1" max="5" class="field !py-2"></div>
+      <div><label class="field-label" for="s-emergency">Emergency deadline (hours)</label><input id="s-emergency" type="number" min="1" class="field !py-2"></div>
+      <div><label class="field-label" for="s-urgent">Urgent deadline (hours)</label><input id="s-urgent" type="number" min="1" class="field !py-2"></div>
+      <div><label class="field-label" for="s-routine">Routine deadline (hours)</label><input id="s-routine" type="number" min="1" class="field !py-2"></div>
+      <div><label class="field-label" for="s-access">New access code <span class="text-gray-400 font-normal">(leave blank to keep)</span></label><input id="s-access" class="field !py-2" autocomplete="off" minlength="6"></div>
+    </div>
+    <p class="text-xs text-gray-500 mt-3">Changing the access code locks out everyone using the old one. Share the new code with owners and residents.</p>
+    <div class="flex flex-wrap items-center gap-3 mt-5">
+      <button id="s-save" type="submit" class="btn btn-primary !py-2.5 text-sm">Save settings</button>
+      <p id="s-msg" class="hidden text-sm"></p>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="assets/js/supabase-client.js"></script>
+<script src="assets/js/building-issues.js"></script>
+</body>
+</html>
